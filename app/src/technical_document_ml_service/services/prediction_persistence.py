@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy.orm import Session
 
 from technical_document_ml_service.db.models import (
-    MLModelORM,
     MLTaskORM,
     PredictionResultORM,
     UploadedDocumentORM,
@@ -21,44 +19,10 @@ from technical_document_ml_service.domain.enums import DocumentType
 from technical_document_ml_service.domain.exceptions import (
     InsufficientBalanceError,
     ModelUnavailableError,
-    TaskExecutionError,
 )
 from technical_document_ml_service.services.document_storage_service import (
     StoredDocumentData,
 )
-
-
-def _parse_supported_document_types(values: list[str]) -> set[DocumentType]:
-    """преобразовать список строковых типов документов в enum-значения"""
-    parsed: set[DocumentType] = set()
-
-    for value in values:
-        try:
-            parsed.add(DocumentType(value))
-        except ValueError:
-            continue
-
-    if not parsed:
-        parsed.add(DocumentType.UNKNOWN)
-
-    return parsed
-
-
-def model_orm_to_domain(model_orm: MLModelORM) -> TechnicalDocumentExtractionModel:
-    """преобразовать ORM-модель в доменную ML-модель"""
-    if model_orm.model_kind != "technical_document_extraction":
-        raise TaskExecutionError("Неподдерживаемый тип ML-модели.")
-
-    return TechnicalDocumentExtractionModel(
-        name=model_orm.name,
-        description=model_orm.description,
-        prediction_cost=model_orm.prediction_cost,
-        supported_document_types=_parse_supported_document_types(
-            model_orm.supported_document_types
-        ),
-        is_active=model_orm.is_active,
-        entity_id=model_orm.id,
-    )
 
 
 def build_domain_documents(
@@ -67,21 +31,17 @@ def build_domain_documents(
     stored_documents: list[StoredDocumentData],
 ) -> list[UploadedDocument]:
     """создать доменные объекты загруженных документов"""
-    domain_documents: list[UploadedDocument] = []
-
-    for stored_document in stored_documents:
-        domain_documents.append(
-            UploadedDocument(
-                owner_id=owner_id,
-                original_filename=stored_document.original_filename,
-                storage_path=stored_document.storage_path,
-                mime_type=stored_document.mime_type,
-                document_type=DocumentType.UNKNOWN,
-                size_bytes=stored_document.size_bytes,
-            )
+    return [
+        UploadedDocument(
+            owner_id=owner_id,
+            original_filename=stored.original_filename,
+            storage_path=stored.storage_path,
+            mime_type=stored.mime_type,
+            document_type=DocumentType.UNKNOWN,
+            size_bytes=stored.size_bytes,
         )
-
-    return domain_documents
+        for stored in stored_documents
+    ]
 
 
 def persist_uploaded_documents(
@@ -115,7 +75,7 @@ def persist_task(
     task: DocumentExtractionTask,
     document_orms: list[UploadedDocumentORM],
 ) -> MLTaskORM:
-    """сохранить ML-задачу и ее связь с документами"""
+    """сохранить ML-задачу и её связь с документами"""
     task_orm = MLTaskORM(
         id=task.id,
         user_id=task.user_id,
@@ -173,9 +133,7 @@ def ensure_prediction_can_start(
     user,
     model: TechnicalDocumentExtractionModel,
 ) -> None:
-    """
-    выполнить ранние проверки до сохранения файлов на диск и создания артефактов
-    """
+    """выполнить ранние проверки до сохранения файлов и создания задачи"""
     if not model.is_active:
         raise ModelUnavailableError("Выбранная ML-модель недоступна.")
 

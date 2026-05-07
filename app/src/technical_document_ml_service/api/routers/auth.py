@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-from datetime import timedelta
-from uuid import UUID
-
 from fastapi import APIRouter, Response, status
 
 from technical_document_ml_service.api.deps import ReadSessionDep, SessionDep
@@ -14,12 +11,8 @@ from technical_document_ml_service.api.schemas.auth import (
     TokenResponse,
 )
 from technical_document_ml_service.api.schemas.users import UserResponse
-from technical_document_ml_service.core.security import (
-    create_access_token,
-    get_auth_cookie_name,
-    get_jwt_expire_minutes,
-    is_auth_cookie_secure,
-)
+from technical_document_ml_service.core.auth_cookies import delete_auth_cookie, set_auth_cookie
+from technical_document_ml_service.core.security import build_access_token
 from technical_document_ml_service.services.auth_service import (
     authenticate_user,
     register_user,
@@ -27,37 +20,6 @@ from technical_document_ml_service.services.auth_service import (
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def _build_access_token(user_id: UUID, email: str) -> tuple[str, int]:
-    """создать access token и вернуть его вместе со сроком жизни в секундах"""
-    expires_delta = timedelta(minutes=get_jwt_expire_minutes())
-    expires_in_seconds = int(expires_delta.total_seconds())
-
-    access_token = create_access_token(
-        user_id=user_id,
-        email=email,
-        expires_delta=expires_delta,
-    )
-    return access_token, expires_in_seconds
-
-
-def _set_auth_cookie(
-    response: Response,
-    access_token: str,
-    expires_in_seconds: int,
-) -> None:
-    """установить HttpOnly cookie с JWT access token"""
-    response.set_cookie(
-        key=get_auth_cookie_name(),
-        value=access_token,
-        max_age=expires_in_seconds,
-        expires=expires_in_seconds,
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=is_auth_cookie_secure(),
-    )
 
 
 @router.post(
@@ -97,11 +59,11 @@ def login(
         password=payload.password,
     )
 
-    access_token, expires_in_seconds = _build_access_token(
+    access_token, expires_in_seconds = build_access_token(
         user_id=user.id,
         email=user.email,
     )
-    _set_auth_cookie(response, access_token, expires_in_seconds)
+    set_auth_cookie(response, access_token, expires_in_seconds)
 
     return AuthResponse(
         message="Аутентификация прошла успешно.",
@@ -127,11 +89,11 @@ def issue_access_token(
         password=payload.password,
     )
 
-    access_token, expires_in_seconds = _build_access_token(
+    access_token, expires_in_seconds = build_access_token(
         user_id=user.id,
         email=user.email,
     )
-    _set_auth_cookie(response, access_token, expires_in_seconds)
+    set_auth_cookie(response, access_token, expires_in_seconds)
 
     return TokenResponse(
         access_token=access_token,
@@ -150,12 +112,5 @@ def logout(response: Response) -> LogoutResponse:
     logout должен быть идемпотентным и успешно очищать cookie,
     даже если пользователь уже разлогинен или токен истек.
     """
-    response.delete_cookie(
-        key=get_auth_cookie_name(),
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=is_auth_cookie_secure(),
-    )
-
+    delete_auth_cookie(response)
     return LogoutResponse(message="Вы успешно вышли из системы.")

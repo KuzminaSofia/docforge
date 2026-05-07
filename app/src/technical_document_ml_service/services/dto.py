@@ -6,7 +6,6 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from technical_document_ml_service.domain.entities import ValidationIssue
 from technical_document_ml_service.domain.enums import (
     DocumentType,
     TaskStatus,
@@ -96,6 +95,15 @@ class TaskDetailsItem:
 
 
 @dataclass(frozen=True, slots=True)
+class ValidationIssueItem:
+    """ошибка или замечание, найденное при валидации входных данных"""
+
+    field_name: str
+    message: str
+    raw_value: Any | None
+
+
+@dataclass(frozen=True, slots=True)
 class ResultArtifactItem:
     """описание артефакта результата обработки"""
 
@@ -114,7 +122,7 @@ class PredictionResultDetailsItem:
     id: UUID
     task_id: UUID
     extracted_data: dict[str, Any]
-    validation_issues: list[ValidationIssue]
+    validation_issues: list[ValidationIssueItem]
     output_path: str | None
     artifacts_dir: str | None
     created_at: datetime

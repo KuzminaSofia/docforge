@@ -33,6 +33,16 @@ def pretty_json(value: Any) -> Markup:
 templates.env.filters["pretty_json"] = pretty_json
 
 
+def forge_page_context(active_page: str | None = None) -> dict[str, Any]:
+    """layout-контекст для авторизованных страниц с боковым меню"""
+    return {
+        "body_class": "body-full-width",
+        "page_content_class": "page-content-full-width",
+        "hide_site_header": True,
+        "active_page": active_page,
+    }
+
+
 def render_template(
     request: Request,
     template_name: str,

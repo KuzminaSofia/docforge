@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -185,35 +186,13 @@ class UploadedDocument(BaseEntity):
         return self._mime_type in self.SUPPORTED_MIME_TYPES
 
 
-class ValidationIssue(BaseEntity):
-    """описание ошибки или замечания, найденного при валидации данных"""
+@dataclass(frozen=True, slots=True)
+class ValidationIssue:
+    """ошибка или замечание, найденное при валидации входных данных"""
 
-    def __init__(
-        self,
-        field_name: str,
-        message: str,
-        raw_value: Any | None = None,
-        entity_id: UUID | None = None,
-    ) -> None:
-        super().__init__(entity_id=entity_id)
-        self._field_name: str = field_name
-        self._message: str = message
-        self._raw_value: Any | None = raw_value
-
-    @property
-    def field_name(self) -> str:
-        """вернуть имя поля, в котором обнаружена ошибка"""
-        return self._field_name
-
-    @property
-    def message(self) -> str:
-        """вернуть текст ошибки валидации"""
-        return self._message
-
-    @property
-    def raw_value(self) -> Any | None:
-        """вернуть исходное ошибочное значение, если оно есть"""
-        return self._raw_value
+    field_name: str
+    message: str
+    raw_value: Any | None = None
 
 
 class PredictionResult(BaseEntity):

@@ -6,8 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from technical_document_ml_service.domain.entities import ValidationIssue
 from technical_document_ml_service.domain.enums import TaskStatus
+from technical_document_ml_service.services.dto import ValidationIssueItem
 
 
 class ValidationIssueResponse(BaseModel):
@@ -18,11 +18,11 @@ class ValidationIssueResponse(BaseModel):
     raw_value: Any | None
 
     @classmethod
-    def from_domain(cls, issue: ValidationIssue) -> "ValidationIssueResponse":
+    def from_item(cls, item: ValidationIssueItem) -> "ValidationIssueResponse":
         return cls(
-            field_name=issue.field_name,
-            message=issue.message,
-            raw_value=issue.raw_value,
+            field_name=item.field_name,
+            message=item.message,
+            raw_value=item.raw_value,
         )
 
 

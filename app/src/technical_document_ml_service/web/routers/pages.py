@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -24,134 +23,20 @@ from technical_document_ml_service.services.billing_service import get_user_tran
 from technical_document_ml_service.services.history_service import (
     get_user_prediction_history,
 )
+from technical_document_ml_service.services.artifact_service import read_markdown_artifact
 from technical_document_ml_service.services.task_query_service import (
     get_user_task_details,
     get_user_task_result,
     get_user_tasks,
 )
+from technical_document_ml_service.domain.enums import TaskStatus
 from technical_document_ml_service.web.deps import CurrentOptionalWebUserDep
-from technical_document_ml_service.web.model_catalog import get_active_models
-from technical_document_ml_service.web.templating import render_template
+from technical_document_ml_service.services.model_query_service import get_active_models
+from technical_document_ml_service.web.templating import forge_page_context, render_template
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["web-pages"])
-
-MAX_MARKDOWN_PREVIEW_CHARS = 200_000
-
-
-def _forge_page_context(active_page: str | None = None) -> dict[str, Any]:
-    """общий layout-контекст для авторизованных страниц с левым sidebar"""
-    return {
-        "body_class": "body-full-width",
-        "page_content_class": "page-content-full-width",
-        "hide_site_header": True,
-        "active_page": active_page,
-    }
-
-
-def _looks_like_markdown_artifact(artifact: dict[str, Any]) -> bool:
-    """проверить, похож ли артефакт результата на Markdown-файл"""
-    name = str(artifact.get("name") or "").lower()
-    path = str(artifact.get("path") or "").lower()
-    kind = str(artifact.get("kind") or "").lower()
-    mime_type = str(artifact.get("mime_type") or "").lower()
-
-    return (
-        name.endswith(".md")
-        or path.endswith(".md")
-        or "markdown" in name
-        or "markdown" in kind
-        or mime_type in {"text/markdown", "text/x-markdown"}
-    )
-
-
-def _resolve_artifact_path(
-    artifact: dict[str, Any],
-    *,
-    artifacts_dir: str | None,
-) -> Path | None:
-    """
-    восстановить путь к артефакту результата
-    """
-    raw_path = artifact.get("path")
-    if not raw_path:
-        return None
-
-    root = Path(artifacts_dir).resolve() if artifacts_dir else None
-    candidate = Path(str(raw_path))
-
-    if not candidate.is_absolute():
-        if root is None:
-            return None
-        candidate = root / candidate
-
-    try:
-        resolved = candidate.resolve()
-    except OSError:
-        return None
-
-    if root is not None and not resolved.is_relative_to(root):
-        return None
-
-    if not resolved.is_file():
-        return None
-
-    return resolved
-
-
-def _read_markdown_artifact(
-    artifacts: list[dict[str, Any]],
-    *,
-    result: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    """
-    найти и прочитать Markdown-артефакт задачи
-    return dict:
-    - name;
-    - path;
-    - content;
-    - is_truncated
-    """
-    artifacts_dir = None
-    if result is not None:
-        artifacts_dir = result.get("artifacts_dir")
-
-    for artifact in artifacts:
-        if not _looks_like_markdown_artifact(artifact):
-            continue
-
-        artifact_path = _resolve_artifact_path(
-            artifact,
-            artifacts_dir=artifacts_dir,
-        )
-        if artifact_path is None:
-            continue
-
-        try:
-            content = artifact_path.read_text(
-                encoding="utf-8",
-                errors="replace",
-            )
-        except OSError:
-            logger.exception("Failed to read markdown artifact: %s", artifact_path)
-            continue
-
-        is_truncated = len(content) > MAX_MARKDOWN_PREVIEW_CHARS
-        if is_truncated:
-            content = (
-                content[:MAX_MARKDOWN_PREVIEW_CHARS]
-                + "\n\n<!-- Markdown preview was truncated in Web UI. -->"
-            )
-
-        return {
-            "name": str(artifact.get("name") or artifact_path.name),
-            "path": str(artifact_path),
-            "content": content,
-            "is_truncated": is_truncated,
-        }
-
-    return None
 
 
 @router.get("/", name="home_page")
@@ -220,7 +105,7 @@ def dashboard_page(
         "dashboard.html",
         page_title="Кабинет",
         current_user=current_user,
-        **_forge_page_context("dashboard"),
+        **forge_page_context("dashboard"),
     )
 
 
@@ -246,7 +131,7 @@ def balance_page(
         success_message=success_message,
         error_message=None,
         form_data={"amount": "10.00"},
-        **_forge_page_context(None),
+        **forge_page_context(None),
     )
 
 
@@ -273,7 +158,7 @@ def predict_page(
             "model_name": models[0]["name"] if models else "",
             "target_schema": "default_schema",
         },
-        **_forge_page_context("predict"),
+        **forge_page_context("predict"),
     )
 
 
@@ -302,6 +187,7 @@ def tasks_page(
             offset=offset,
         )
     except ValidationError:
+        valid_statuses = ", ".join(s.value for s in TaskStatus)
         return render_template(
             request,
             "tasks.html",
@@ -311,11 +197,8 @@ def tasks_page(
             current_status=normalized_status or "",
             limit=limit,
             offset=offset,
-            error_message=(
-                "Некорректный фильтр статуса. "
-                "Допустимые значения: created, queued, validating, processing, completed, failed."
-            ),
-            **_forge_page_context("tasks"),
+            error_message=f"Некорректный фильтр статуса. Допустимые значения: {valid_statuses}.",
+            **forge_page_context("tasks"),
         )
 
     items = get_user_tasks(
@@ -343,7 +226,7 @@ def tasks_page(
         limit=query.limit,
         offset=query.offset,
         error_message=None,
-        **_forge_page_context("tasks"),
+        **forge_page_context("tasks"),
     )
 
 
@@ -384,7 +267,7 @@ def task_detail_page(
             result = result_bundle.get("result")
             artifacts = result_bundle.get("artifacts", [])
 
-            markdown_artifact = _read_markdown_artifact(
+            markdown_artifact = read_markdown_artifact(
                 artifacts,
                 result=result,
             )
@@ -423,7 +306,7 @@ def task_detail_page(
         markdown_content=markdown_content,
         result_warning_message=result_warning_message,
         auto_refresh=auto_refresh,
-        **_forge_page_context("tasks"),
+        **forge_page_context("tasks"),
     )
 
 
@@ -470,5 +353,5 @@ def history_page(
         predictions=predictions,
         limit=limit,
         offset=offset,
-        **_forge_page_context("history"),
+        **forge_page_context("history"),
     )

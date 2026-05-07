@@ -1,33 +1,10 @@
 from __future__ import annotations
 
 from technical_document_ml_service.db.session import SessionLocal
-from technical_document_ml_service.services.document_storage_service import (
-    IncomingDocumentData,
-)
 from technical_document_ml_service.services.prediction_processing_service import (
     process_document_prediction_task,
 )
-from technical_document_ml_service.services.prediction_submission_service import (
-    submit_document_prediction,
-)
-
-
-def _submit_test_task(api_user, api_model, target_schema: str = "passport_fields"):
-    with SessionLocal() as session:
-        submission = submit_document_prediction(
-            session,
-            user_id=api_user.id,
-            model_name=api_model.name,
-            target_schema=target_schema,
-            documents=[
-                IncomingDocumentData(
-                    filename="sample.pdf",
-                    content_type="application/pdf",
-                    content=b"%PDF-1.4 test content",
-                )
-            ],
-        )
-    return submission
+from helpers import submit_test_task
 
 
 def test_get_tasks_returns_user_tasks_list(
@@ -37,8 +14,8 @@ def test_get_tasks_returns_user_tasks_list(
     auth_headers,
     publish_task_spy,
 ) -> None:
-    first_submission = _submit_test_task(api_user, api_model, "passport_fields")
-    second_submission = _submit_test_task(api_user, api_model, "certificate_fields")
+    first_submission = submit_test_task(api_user, api_model, "passport_fields")
+    second_submission = submit_test_task(api_user, api_model, "certificate_fields")
 
     response = client.get(
         "/tasks",
@@ -72,8 +49,8 @@ def test_get_tasks_supports_status_filter(
     auth_headers,
     publish_task_spy,
 ) -> None:
-    queued_submission = _submit_test_task(api_user, api_model, "queued_schema")
-    completed_submission = _submit_test_task(api_user, api_model, "completed_schema")
+    queued_submission = submit_test_task(api_user, api_model, "queued_schema")
+    completed_submission = submit_test_task(api_user, api_model, "completed_schema")
 
     with SessionLocal() as session:
         process_document_prediction_task(
@@ -115,7 +92,7 @@ def test_get_task_details_returns_task_payload(
     auth_headers,
     publish_task_spy,
 ) -> None:
-    submission = _submit_test_task(api_user, api_model)
+    submission = submit_test_task(api_user, api_model)
 
     response = client.get(
         f"/tasks/{submission.task_id}",
@@ -144,7 +121,7 @@ def test_get_task_result_returns_null_result_for_queued_task(
     auth_headers,
     publish_task_spy,
 ) -> None:
-    submission = _submit_test_task(api_user, api_model)
+    submission = submit_test_task(api_user, api_model)
 
     response = client.get(
         f"/tasks/{submission.task_id}/result",
@@ -168,7 +145,7 @@ def test_get_task_result_returns_result_and_artifacts_after_processing(
     auth_headers,
     publish_task_spy,
 ) -> None:
-    submission = _submit_test_task(api_user, api_model)
+    submission = submit_test_task(api_user, api_model)
 
     with SessionLocal() as session:
         process_document_prediction_task(
@@ -203,7 +180,7 @@ def test_get_task_details_for_foreign_user_returns_403(
     low_balance_auth_headers,
     publish_task_spy,
 ) -> None:
-    submission = _submit_test_task(api_user, api_model)
+    submission = submit_test_task(api_user, api_model)
 
     response = client.get(
         f"/tasks/{submission.task_id}",
@@ -224,8 +201,8 @@ def test_get_tasks_does_not_return_foreign_user_tasks(
     another_auth_headers,
     publish_task_spy,
 ) -> None:
-    own_submission = _submit_test_task(api_user, api_model, "own_schema")
-    _submit_test_task(another_api_user, api_model, "foreign_schema")
+    own_submission = submit_test_task(api_user, api_model, "own_schema")
+    submit_test_task(another_api_user, api_model, "foreign_schema")
 
     response = client.get(
         "/tasks",

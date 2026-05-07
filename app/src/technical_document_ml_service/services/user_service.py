@@ -32,24 +32,13 @@ def create_user(
     if existing_user is not None:
         raise UserAlreadyExistsError("Пользователь с таким email уже существует.")
 
-    domain_user = User(
-        email=email,
-        password_hash=password_hash,
-        role=role,
-        balance_credits=balance_credits,
-        is_active=is_active,
-    )
-
     user_orm = UserORM(
-        id=domain_user.id,
         email=email,
         password_hash=password_hash,
         role=role.value,
-        balance_credits=domain_user.balance_credits,
-        is_active=domain_user.is_active,
-        created_at=domain_user.created_at,
+        balance_credits=balance_credits,
+        is_active=is_active,
     )
-
     session.add(user_orm)
     session.flush()
 

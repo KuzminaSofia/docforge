@@ -1,23 +1,19 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
 from decimal import Decimal, InvalidOperation
-from uuid import UUID
 
 from fastapi import APIRouter, Form, Request, UploadFile
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import RedirectResponse
 
 from technical_document_ml_service.api.deps import ReadSessionDep, SessionDep
-from technical_document_ml_service.core.security import (
-    create_access_token,
-    get_auth_cookie_name,
-    get_jwt_expire_minutes,
-    is_auth_cookie_secure,
-)
+from technical_document_ml_service.core.auth_cookies import delete_auth_cookie, set_auth_cookie
+from technical_document_ml_service.core.config import app_settings
+from technical_document_ml_service.core.security import build_access_token
 from technical_document_ml_service.domain.exceptions import (
     AuthenticationError,
     AuthorizationError,
+    FileSizeLimitError,
 )
 from technical_document_ml_service.services.auth_service import (
     authenticate_user,
@@ -31,54 +27,13 @@ from technical_document_ml_service.services.prediction_submission_service import
     submit_document_prediction,
 )
 from technical_document_ml_service.web.deps import CurrentOptionalWebUserDep
-from technical_document_ml_service.web.model_catalog import get_active_models
+from technical_document_ml_service.services.model_query_service import get_active_models
 from technical_document_ml_service.web.security import ensure_same_origin
-from technical_document_ml_service.web.templating import render_template
+from technical_document_ml_service.web.templating import forge_page_context, render_template
 
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["web-actions"])
-
-
-def _forge_page_context(active_page: str | None = None) -> dict:
-    """общий layout-контекст для авторизованных страниц с левым sidebar"""
-    return {
-        "body_class": "body-full-width",
-        "page_content_class": "page-content-full-width",
-        "hide_site_header": True,
-        "active_page": active_page,
-    }
-
-
-def _build_access_token(user_id: UUID, email: str) -> tuple[str, int]:
-    """создать access token и вернуть его вместе со сроком жизни в секундах"""
-    expires_delta = timedelta(minutes=get_jwt_expire_minutes())
-    expires_in_seconds = int(expires_delta.total_seconds())
-
-    access_token = create_access_token(
-        user_id=user_id,
-        email=email,
-        expires_delta=expires_delta,
-    )
-    return access_token, expires_in_seconds
-
-
-def _set_auth_cookie(
-    response: Response,
-    access_token: str,
-    expires_in_seconds: int,
-) -> None:
-    """установить HttpOnly cookie с JWT access token"""
-    response.set_cookie(
-        key=get_auth_cookie_name(),
-        value=access_token,
-        max_age=expires_in_seconds,
-        expires=expires_in_seconds,
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=is_auth_cookie_secure(),
-    )
 
 
 @router.post("/login", name="login_action")
@@ -120,13 +75,13 @@ def login_action(
             status_code=500,
         )
 
-    access_token, expires_in_seconds = _build_access_token(
+    access_token, expires_in_seconds = build_access_token(
         user_id=user.id,
         email=user.email,
     )
 
     response = RedirectResponse(url="/dashboard", status_code=303)
-    _set_auth_cookie(response, access_token, expires_in_seconds)
+    set_auth_cookie(response, access_token, expires_in_seconds)
     return response
 
 
@@ -162,13 +117,13 @@ def register_action(
             status_code=400,
         )
 
-    access_token, expires_in_seconds = _build_access_token(
+    access_token, expires_in_seconds = build_access_token(
         user_id=user.id,
         email=user.email,
     )
 
     response = RedirectResponse(url="/dashboard", status_code=303)
-    _set_auth_cookie(response, access_token, expires_in_seconds)
+    set_auth_cookie(response, access_token, expires_in_seconds)
     return response
 
 
@@ -178,13 +133,7 @@ def logout_action(request: Request):
     ensure_same_origin(request)
 
     response = RedirectResponse(url="/", status_code=303)
-    response.delete_cookie(
-        key=get_auth_cookie_name(),
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=is_auth_cookie_secure(),
-    )
+    delete_auth_cookie(response)
     return response
 
 
@@ -215,7 +164,7 @@ def top_up_action(
             error_message="Введите корректную положительную сумму пополнения.",
             form_data={"amount": amount},
             status_code=400,
-            **_forge_page_context(None),
+            **forge_page_context(None),
         )
 
     try:
@@ -235,7 +184,7 @@ def top_up_action(
             error_message="Не удалось пополнить баланс. Попробуйте ещё раз.",
             form_data={"amount": amount},
             status_code=500,
-            **_forge_page_context(None),
+            **forge_page_context(None),
         )
 
     return RedirectResponse(url="/balance-ui?success=topup", status_code=303)
@@ -271,14 +220,47 @@ def predict_submit_action(
                 "target_schema": target_schema,
             },
             status_code=400,
-            **_forge_page_context("predict"),
+            **forge_page_context("predict"),
         )
 
+    max_file_bytes = app_settings.max_upload_file_size_mb * 1024 * 1024
+    max_total_bytes = app_settings.max_task_total_size_mb * 1024 * 1024
+
     incoming_documents: list[IncomingDocumentData] = []
+    total_bytes = 0
+
+    def _predict_error(message: str, status_code: int = 400):
+        return render_template(
+            request,
+            "predict.html",
+            page_title="Новая обработка",
+            current_user=current_user,
+            models=models,
+            error_message=message,
+            form_data={"model_name": model_name, "target_schema": target_schema},
+            status_code=status_code,
+            **forge_page_context("predict"),
+        )
 
     try:
         for document in documents:
             content = document.file.read()
+            file_size = len(content)
+
+            if file_size > max_file_bytes:
+                raise FileSizeLimitError(
+                    f"Файл '{document.filename}' превышает допустимый размер "
+                    f"{app_settings.max_upload_file_size_mb} МБ "
+                    f"(получено {file_size / 1024 / 1024:.1f} МБ)."
+                )
+
+            total_bytes += file_size
+            if total_bytes > max_total_bytes:
+                raise FileSizeLimitError(
+                    f"Суммарный размер файлов задачи превышает "
+                    f"{app_settings.max_task_total_size_mb} МБ."
+                )
+
             incoming_documents.append(
                 IncomingDocumentData(
                     filename=document.filename or "document",
@@ -286,6 +268,8 @@ def predict_submit_action(
                     content=content,
                 )
             )
+    except FileSizeLimitError as exc:
+        return _predict_error(str(exc), status_code=413)
     finally:
         for document in documents:
             document.file.close()
@@ -300,22 +284,9 @@ def predict_submit_action(
         )
     except Exception:
         logger.exception("Unexpected error during web prediction submission.")
-        return render_template(
-            request,
-            "predict.html",
-            page_title="Новая обработка",
-            current_user=current_user,
-            models=models,
-            error_message=(
-                "Не удалось отправить задачу. "
-                "Проверьте баланс, выбранную модель и загруженные документы."
-            ),
-            form_data={
-                "model_name": model_name,
-                "target_schema": target_schema,
-            },
-            status_code=400,
-            **_forge_page_context("predict"),
+        return _predict_error(
+            "Не удалось отправить задачу. "
+            "Проверьте баланс, выбранную модель и загруженные документы.",
         )
 
     return RedirectResponse(

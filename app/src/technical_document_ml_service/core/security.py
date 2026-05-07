@@ -246,6 +246,18 @@ def create_access_token(
     return f"{encoded_header}.{encoded_payload}.{encoded_signature}"
 
 
+def build_access_token(user_id: UUID, email: str) -> tuple[str, int]:
+    """создать access token и вернуть его вместе со сроком жизни в секундах"""
+    expires_delta = timedelta(minutes=get_jwt_expire_minutes())
+    expires_in_seconds = int(expires_delta.total_seconds())
+    access_token = create_access_token(
+        user_id=user_id,
+        email=email,
+        expires_delta=expires_delta,
+    )
+    return access_token, expires_in_seconds
+
+
 def decode_access_token(token: str) -> dict[str, Any]:
     """
     проверить подпись и срок действия JWT access token

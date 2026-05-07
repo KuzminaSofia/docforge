@@ -16,19 +16,21 @@ from technical_document_ml_service.services.document_storage_service import (
     delete_stored_files,
     save_documents,
 )
-from technical_document_ml_service.services.mappers import sync_task_orm_from_domain
+from technical_document_ml_service.services.mappers import (
+    model_orm_to_domain,
+    orm_to_domain_user,
+    sync_task_orm_from_domain,
+)
 from technical_document_ml_service.services.orm_queries import (
     get_model_orm_by_name_or_raise,
     get_user_orm_or_raise,
 )
-from technical_document_ml_service.services.prediction_service import (
+from technical_document_ml_service.services.prediction_persistence import (
     build_domain_documents,
     ensure_prediction_can_start,
-    model_orm_to_domain,
     persist_task,
     persist_uploaded_documents,
 )
-from technical_document_ml_service.services.mappers import orm_to_domain_user
 
 
 @dataclass(frozen=True, slots=True)
