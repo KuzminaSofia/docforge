@@ -7,7 +7,7 @@ def test_home_page_renders(client) -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "Technical Document ML Service" in response.text
+    assert "DocForge" in response.text
     assert "Личный кабинет для обработки технической документации" in response.text
 
 

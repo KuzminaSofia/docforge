@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Request
@@ -22,14 +23,16 @@ from technical_document_ml_service.services.billing_service import get_user_tran
 from technical_document_ml_service.services.history_service import (
     get_user_prediction_history,
 )
+from technical_document_ml_service.services.artifact_service import read_markdown_artifact
 from technical_document_ml_service.services.task_query_service import (
     get_user_task_details,
     get_user_task_result,
     get_user_tasks,
 )
+from technical_document_ml_service.domain.enums import TaskStatus
 from technical_document_ml_service.web.deps import CurrentOptionalWebUserDep
-from technical_document_ml_service.web.model_catalog import get_active_models
-from technical_document_ml_service.web.templating import render_template
+from technical_document_ml_service.services.model_query_service import get_active_models
+from technical_document_ml_service.web.templating import forge_page_context, render_template
 
 
 logger = logging.getLogger(__name__)
@@ -100,8 +103,9 @@ def dashboard_page(
     return render_template(
         request,
         "dashboard.html",
-        page_title="Личный кабинет",
+        page_title="Кабинет",
         current_user=current_user,
+        **forge_page_context("dashboard"),
     )
 
 
@@ -122,11 +126,12 @@ def balance_page(
     return render_template(
         request,
         "balance.html",
-        page_title="Баланс",
+        page_title="Пополение баланса",
         current_user=current_user,
         success_message=success_message,
         error_message=None,
         form_data={"amount": "10.00"},
+        **forge_page_context(None),
     )
 
 
@@ -145,7 +150,7 @@ def predict_page(
     return render_template(
         request,
         "predict.html",
-        page_title="Новая ML-задача",
+        page_title="Новая обработка",
         current_user=current_user,
         models=models,
         error_message=None,
@@ -153,6 +158,7 @@ def predict_page(
             "model_name": models[0]["name"] if models else "",
             "target_schema": "default_schema",
         },
+        **forge_page_context("predict"),
     )
 
 
@@ -181,6 +187,7 @@ def tasks_page(
             offset=offset,
         )
     except ValidationError:
+        valid_statuses = ", ".join(s.value for s in TaskStatus)
         return render_template(
             request,
             "tasks.html",
@@ -190,10 +197,8 @@ def tasks_page(
             current_status=normalized_status or "",
             limit=limit,
             offset=offset,
-            error_message=(
-                "Некорректный фильтр статуса. "
-                "Допустимые значения: created, queued, validating, processing, completed, failed."
-            ),
+            error_message=f"Некорректный фильтр статуса. Допустимые значения: {valid_statuses}.",
+            **forge_page_context("tasks"),
         )
 
     items = get_user_tasks(
@@ -221,6 +226,7 @@ def tasks_page(
         limit=query.limit,
         offset=query.offset,
         error_message=None,
+        **forge_page_context("tasks"),
     )
 
 
@@ -244,7 +250,9 @@ def task_detail_page(
 
     result_bundle = None
     result = None
-    artifacts: list[dict] = []
+    artifacts: list[dict[str, Any]] = []
+    markdown_artifact = None
+    markdown_content = None
     result_warning_message = None
 
     task_status = str(task.get("status", "")).lower()
@@ -258,6 +266,16 @@ def task_detail_page(
             result_bundle = TaskResultResponse.from_bundle(bundle).model_dump(mode="json")
             result = result_bundle.get("result")
             artifacts = result_bundle.get("artifacts", [])
+
+            markdown_artifact = read_markdown_artifact(
+                artifacts,
+                result=result,
+            )
+            markdown_content = (
+                markdown_artifact["content"]
+                if markdown_artifact is not None
+                else None
+            )
         except Exception:
             logger.exception(
                 "Failed to load task result for task_id=%s user_id=%s",
@@ -267,6 +285,8 @@ def task_detail_page(
             result_bundle = None
             result = None
             artifacts = []
+            markdown_artifact = None
+            markdown_content = None
             result_warning_message = (
                 "Задача завершена, но результат пока не удалось отобразить."
             )
@@ -276,14 +296,17 @@ def task_detail_page(
     return render_template(
         request,
         "task_detail.html",
-        page_title=f"Задача {task_id}",
+        page_title=f"Обработка {task_id}",
         current_user=current_user,
         task=task,
         result_bundle=result_bundle,
         result=result,
         artifacts=artifacts,
+        markdown_artifact=markdown_artifact,
+        markdown_content=markdown_content,
         result_warning_message=result_warning_message,
         auto_refresh=auto_refresh,
+        **forge_page_context("tasks"),
     )
 
 
@@ -330,4 +353,5 @@ def history_page(
         predictions=predictions,
         limit=limit,
         offset=offset,
+        **forge_page_context("history"),
     )

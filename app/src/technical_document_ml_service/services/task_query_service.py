@@ -6,8 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from technical_document_ml_service.db.models import MLTaskORM, PredictionResultORM
-from technical_document_ml_service.domain.entities import ValidationIssue
-from technical_document_ml_service.domain.enums import DocumentType, TaskStatus
+from technical_document_ml_service.domain.enums import TaskStatus
 from technical_document_ml_service.domain.exceptions import AuthorizationError, NotFoundError
 from technical_document_ml_service.services.dto import (
     PredictionResultDetailsItem,
@@ -16,15 +15,9 @@ from technical_document_ml_service.services.dto import (
     TaskDocumentItem,
     TaskListItem,
     TaskResultBundle,
+    ValidationIssueItem,
 )
-
-
-def _parse_document_type(raw_value: str) -> DocumentType:
-    """безопасно преобразовать строковый тип документа в enum"""
-    try:
-        return DocumentType(raw_value)
-    except ValueError:
-        return DocumentType.UNKNOWN
+from technical_document_ml_service.services.mappers import parse_document_type
 
 
 def _load_task_with_related(
@@ -63,7 +56,7 @@ def _build_task_document_item(document) -> TaskDocumentItem:
         original_filename=document.filename,
         storage_path=document.storage_path,
         mime_type=document.mime_type,
-        document_type=_parse_document_type(document.document_type),
+        document_type=parse_document_type(document.document_type),
         size_bytes=document.file_size,
         uploaded_at=document.uploaded_at,
     )
@@ -117,20 +110,16 @@ def _build_task_details_item(task: MLTaskORM) -> TaskDetailsItem:
     )
 
 
-def _build_validation_issues(items: list[dict]) -> list[ValidationIssue]:
-    """восстановить validation issues из JSONB"""
-    issues: list[ValidationIssue] = []
-
-    for item in items:
-        issues.append(
-            ValidationIssue(
-                field_name=str(item.get("field_name", "")),
-                message=str(item.get("message", "")),
-                raw_value=item.get("raw_value"),
-            )
+def _build_validation_issues(items: list[dict]) -> list[ValidationIssueItem]:
+    """десериализовать validation issues из JSONB в DTO"""
+    return [
+        ValidationIssueItem(
+            field_name=str(item.get("field_name", "")),
+            message=str(item.get("message", "")),
+            raw_value=item.get("raw_value"),
         )
-
-    return issues
+        for item in items
+    ]
 
 
 def _build_artifact_items(result_orm: PredictionResultORM) -> list[ResultArtifactItem]:

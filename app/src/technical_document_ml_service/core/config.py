@@ -33,6 +33,9 @@ class AppSettings:
     rabbitmq_prefetch_count: int
     rabbitmq_ssl_enabled: bool
 
+    max_upload_file_size_mb: int
+    max_task_total_size_mb: int
+
 
 def load_app_settings() -> AppSettings:
     """загрузить настройки приложения из переменных окружения"""
@@ -61,6 +64,8 @@ def load_app_settings() -> AppSettings:
         ),
         rabbitmq_prefetch_count=int(os.getenv("RABBITMQ_PREFETCH_COUNT", "1")),
         rabbitmq_ssl_enabled=_get_bool_env("RABBITMQ_SSL_ENABLED", False),
+        max_upload_file_size_mb=int(os.getenv("APP_MAX_UPLOAD_FILE_SIZE_MB", "50")),
+        max_task_total_size_mb=int(os.getenv("APP_MAX_TASK_TOTAL_SIZE_MB", "200")),
     )
 
 

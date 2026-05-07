@@ -1,0 +1,88 @@
+<aside class="forge-sidebar">
+    <a class="forge-brand" href="{{ request.url_for('dashboard_page') }}">
+        <span class="forge-brand-mark">DF</span>
+        <span>DocForge</span>
+    </a>
+
+    <nav class="forge-nav">
+        <p class="forge-nav-title">Рабочая область</p>
+
+        <a
+            href="{{ request.url_for('dashboard_page') }}"
+            class="{% if active_page == 'dashboard' %}forge-nav-active{% endif %}"
+        >
+            Кабинет
+        </a>
+
+        <a
+            href="{{ request.url_for('predict_page') }}"
+            class="{% if active_page == 'predict' %}forge-nav-active{% endif %}"
+        >
+            Новая обработка
+        </a>
+
+        <a
+            href="{{ request.url_for('tasks_page') }}"
+            class="{% if active_page == 'tasks' %}forge-nav-active{% endif %}"
+        >
+            Документы
+        </a>
+    </nav>
+
+    <nav class="forge-nav">
+        <p class="forge-nav-title">Сервис</p>
+
+        <a
+            href="{{ request.url_for('history_page') }}"
+            class="{% if active_page == 'history' %}forge-nav-active{% endif %}"
+        >
+            Операции
+        </a>
+    </nav>
+
+    <div class="forge-sidebar-spacer"></div>
+
+    {% if current_user %}
+        <details class="account-menu">
+            <summary class="account-summary">
+                <span class="account-avatar">
+                    {{ current_user.email[:1] | upper }}
+                </span>
+
+                <span class="account-summary-text">
+                    <strong>{{ current_user.email }}</strong>
+                    <small>{{ current_user.balance_credits }} credits</small>
+                </span>
+
+                <span class="account-caret">⌃</span>
+            </summary>
+
+            <div class="account-popover">
+                <div class="account-popover-header">
+                    <span class="account-popover-email">{{ current_user.email }}</span>
+                    <span class="account-popover-balance">
+                        Баланс: <strong>{{ current_user.balance_credits }} credits</strong>
+                    </span>
+                </div>
+
+                <a href="{{ request.url_for('dashboard_page') }}" class="account-menu-item">
+                    Личный кабинет
+                </a>
+
+                <a href="{{ request.url_for('balance_page') }}" class="account-menu-item">
+                    Пополнить баланс
+                </a>
+
+                <a href="{{ request.url_for('history_page') }}" class="account-menu-item">
+                    История операций
+                </a>
+
+                <form method="post" action="{{ request.url_for('logout_action') }}" class="account-menu-form">
+                    <button type="submit" class="account-menu-item account-menu-button">
+                        Выйти
+                    </button>
+                </form>
+            </div>
+        </details>
+    {% endif %}
+</aside>

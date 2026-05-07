@@ -1,149 +1,227 @@
 {% extends "base.html" %}
 
-{% block content %}
-<section class="page-section" data-current-balance="{{ current_user.balance_credits }}">
-    <div class="page-header-block">
-        <div>
-            <p class="eyebrow">ML-задача</p>
-            <h1>Создать новую задачу</h1>
-            <p class="muted">
-                После отправки документы будут поставлены в очередь на обработку,
-                а детальный результат появится на странице задачи.
-            </p>
-        </div>
-    </div>
+{% block body_class %}body-full-width{% endblock %}
 
-    <div class="predict-layout">
-        <article class="card">
-            <h2>Параметры задачи</h2>
+{% block page_container %}
+<section class="forge-page" data-current-balance="{{ current_user.balance_credits }}">
+    {% include "partials/sidebar.html" %}
 
-            {% if error_message %}
+    <main class="forge-main">
+        <header class="forge-topbar">
+            <div class="forge-project-title">Новая обработка документа</div>
+
+            <div class="forge-steps">
+                <span class="forge-step forge-step-active">Преобразование</span>
+            </div>
+
+            <a class="button button-secondary" href="{{ request.url_for('tasks_page') }}">
+                Документы
+            </a>
+        </header>
+
+        {% if error_message %}
+            <div class="forge-alert-row">
                 <div class="alert alert-error">{{ error_message }}</div>
-            {% endif %}
+            </div>
+        {% endif %}
 
-            <form
-                method="post"
-                action="{{ request.url_for('predict_submit_action') }}"
-                enctype="multipart/form-data"
-                class="form-stack"
-                id="predict-form"
-            >
-                <label class="form-label">
-                    <span>Модель</span>
-                    <select name="model_name" id="model-name-select" required>
-                        {% for model in models %}
-                            <option
-                                value="{{ model.name }}"
-                                data-cost="{{ model.prediction_cost }}"
-                                data-backend="{{ model.backend_name }}"
-                                data-kind="{{ model.model_kind }}"
-                                data-description="{{ model.description }}"
-                                {% if form_data.model_name == model.name %}selected{% endif %}
-                            >
-                                {{ model.name }} — {{ model.prediction_cost }} credits
-                            </option>
-                        {% endfor %}
-                    </select>
-                </label>
-
-                <label class="form-label">
-                    <span>Target schema</span>
+        <form
+            method="post"
+            action="{{ request.url_for('predict_submit_action') }}"
+            enctype="multipart/form-data"
+            class="forge-workspace"
+            id="predict-form"
+        >
+            <section class="forge-upload-panel">
+                <label class="upload-dropzone" for="document-input">
                     <input
-                        type="text"
-                        name="target_schema"
-                        value="{{ form_data.target_schema }}"
-                        required
-                    >
-                </label>
-
-                <label class="form-label">
-                    <span>Документы</span>
-                    <input
+                        id="document-input"
+                        class="visually-hidden"
                         type="file"
                         name="documents"
                         multiple
                         required
                     >
+
+                    <span class="upload-icon">⇩</span>
+                    <strong>Перетащите документ сюда</strong>
+                    <span>или <u>выберите файл</u></span>
+
+                    <div id="selected-files" class="selected-files muted">
+                        Файлы не выбраны
+                    </div>
                 </label>
 
-                <button type="submit" class="button button-primary button-full">
-                    Отправить задачу
-                </button>
-            </form>
-        </article>
+                <div class="supported-formats-card">
+                    <h3>Поддерживаемые форматы</h3>
 
-        <aside class="predict-sidebar">
-            <article class="card">
-                <h2>Баланс и стоимость</h2>
-
-                <div class="predict-summary-grid">
-                    <div class="meta-tile">
-                        <span class="meta-tile-label">Текущий баланс</span>
-                        <strong id="current-balance-value">{{ current_user.balance_credits }}</strong>
-                    </div>
-
-                    <div class="meta-tile">
-                        <span class="meta-tile-label">Стоимость модели</span>
-                        <strong id="selected-model-cost">—</strong>
-                    </div>
-                </div>
-
-                <div id="balance-check-box" class="balance-check-box">
-                    <span class="balance-check-label">Проверка баланса</span>
-                    <strong id="balance-check-text">—</strong>
-                </div>
-
-                <p class="muted">
-                    Это предварительная подсказка интерфейса. Финальная проверка баланса
-                    и списание выполняются на стороне backend.
-                </p>
-            </article>
-
-            <article class="card">
-                <h2>Выбранная модель</h2>
-
-                {% if models %}
-                    <div class="stack-list">
-                        <div class="model-card">
-                            <div class="model-card-header">
-                                <strong id="selected-model-name">—</strong>
-                                <span id="selected-model-cost-pill" class="status-pill status-pill-neutral">—</span>
-                            </div>
-
-                            <p id="selected-model-description" class="muted">—</p>
-
-                            <div class="meta-row">
-                                <span>backend: <strong id="selected-model-backend">—</strong></span>
-                                <span>kind: <strong id="selected-model-kind">—</strong></span>
-                            </div>
+                    <dl>
+                        <div>
+                            <dt>Документы</dt>
+                            <dd>PDF</dd>
                         </div>
+                        <div>
+                            <dt>Изображения</dt>
+                            <dd>PNG, JPEG, JPG</dd>
+                        </div>
+                        <div>
+                            <dt>Результат</dt>
+                            <dd>Markdown, JSON, TXT и служебные артефакты обработки</dd>
+                        </div>
+                    </dl>
+                </div>
+
+                <div class="processing-preview-card">
+                    <h3>Что произойдёт после отправки</h3>
+
+                    <div class="processing-step processing-step-done">
+                        <span></span>
+                        <strong>Загрузка документа</strong>
                     </div>
-                {% else %}
-                    <p class="muted">Активные модели не найдены.</p>
-                {% endif %}
-            </article>
-        </aside>
-    </div>
+
+                    <div class="processing-step">
+                        <span></span>
+                        <strong>Постановка задачи в очередь</strong>
+                    </div>
+
+                    <div class="processing-step processing-step-muted">
+                        <span></span>
+                        <strong>Обработка документа worker-сервисом</strong>
+                    </div>
+
+                    <div class="processing-step processing-step-muted">
+                        <span></span>
+                        <strong>Формирование Markdown и артефактов</strong>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="forge-config-panel">
+                <div class="forge-panel-tabs">
+                    <button type="button" class="forge-panel-tab forge-panel-tab-active">
+                        Настройки
+                    </button>
+                    <button type="button" class="forge-panel-tab" disabled>
+                        Результат
+                    </button>
+                </div>
+
+                <div class="config-section">
+                    {% if models %}
+                        <label class="form-label">
+                            <span>Модель обработки</span>
+                            <select name="model_name" id="model-name-select" required>
+                                {% for model in models %}
+                                    <option
+                                        value="{{ model.name }}"
+                                        data-cost="{{ model.prediction_cost }}"
+                                        data-backend="{{ model.backend_name }}"
+                                        data-kind="{{ model.model_kind }}"
+                                        data-description="{{ model.description }}"
+                                        {% if form_data.model_name == model.name %}selected{% endif %}
+                                    >
+                                        {{ model.name }} — {{ model.prediction_cost }} credits
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                    {% else %}
+                        <div class="alert alert-error">
+                            Активные модели обработки не найдены. Отправка документа временно недоступна.
+                        </div>
+                    {% endif %}
+
+                    <label class="form-label">
+                        <span>Схема извлечения</span>
+                        <input
+                            type="text"
+                            name="target_schema"
+                            value="{{ form_data.target_schema }}"
+                            required
+                        >
+                    </label>
+                </div>
+
+                <article class="selected-model-card">
+                    <p class="eyebrow">Выбранная модель</p>
+
+                    <h3 id="selected-model-name">—</h3>
+
+                    <p id="selected-model-description" class="muted">
+                        —
+                    </p>
+
+                    <dl class="compact-kv">
+                        <div>
+                            <dt>Backend</dt>
+                            <dd id="selected-model-backend">—</dd>
+                        </div>
+
+                        <div>
+                            <dt>Тип модели</dt>
+                            <dd id="selected-model-kind">—</dd>
+                        </div>
+                    </dl>
+                </article>
+
+                <div class="balance-inline-card" id="balance-check-box">
+                    <span>Проверка баланса</span>
+
+                    <strong id="balance-check-text">—</strong>
+
+                    <small>
+                        Текущий баланс:
+                        <b id="current-balance-value">{{ current_user.balance_credits }}</b>
+                    </small>
+
+                    <small>
+                        Стоимость модели:
+                        <b id="selected-model-cost">—</b>
+                    </small>
+                </div>
+
+                <button
+                    type="submit"
+                    class="button button-primary button-full forge-submit-button"
+                    {% if not models %}disabled{% endif %}
+                >
+                    Запустить обработку
+                </button>
+            </aside>
+        </form>
+    </main>
 </section>
 
 <script>
     (() => {
         const root = document.querySelector("[data-current-balance]");
         const select = document.getElementById("model-name-select");
+        const input = document.getElementById("document-input");
+        const selectedFiles = document.getElementById("selected-files");
+
+        if (input && selectedFiles) {
+            input.addEventListener("change", () => {
+                const files = Array.from(input.files || []);
+                selectedFiles.textContent = files.length
+                    ? files.map((file) => file.name).join(", ")
+                    : "Файлы не выбраны";
+            });
+        }
+
         if (!root || !select) {
             return;
         }
 
         const currentBalance = Number((root.dataset.currentBalance || "0").replace(",", "."));
 
+        const selectedModelCost = document.getElementById("selected-model-cost");
+        const balanceCheckBox = document.getElementById("balance-check-box");
+        const balanceCheckText = document.getElementById("balance-check-text");
+
         const selectedModelName = document.getElementById("selected-model-name");
         const selectedModelDescription = document.getElementById("selected-model-description");
         const selectedModelBackend = document.getElementById("selected-model-backend");
         const selectedModelKind = document.getElementById("selected-model-kind");
-        const selectedModelCost = document.getElementById("selected-model-cost");
-        const selectedModelCostPill = document.getElementById("selected-model-cost-pill");
-        const balanceCheckBox = document.getElementById("balance-check-box");
-        const balanceCheckText = document.getElementById("balance-check-text");
 
         function updateModelInfo() {
             const option = select.options[select.selectedIndex];
@@ -151,19 +229,29 @@
                 return;
             }
 
-            const modelName = option.value || "—";
             const modelCostRaw = option.dataset.cost || "0";
             const modelCost = Number(modelCostRaw.replace(",", "."));
             const backend = option.dataset.backend || "—";
             const kind = option.dataset.kind || "—";
             const description = option.dataset.description || "Описание отсутствует.";
 
-            selectedModelName.textContent = modelName;
-            selectedModelDescription.textContent = description;
-            selectedModelBackend.textContent = backend;
-            selectedModelKind.textContent = kind;
+            if (selectedModelName) {
+                selectedModelName.textContent = option.value || "—";
+            }
+
+            if (selectedModelDescription) {
+                selectedModelDescription.textContent = description;
+            }
+
+            if (selectedModelBackend) {
+                selectedModelBackend.textContent = backend;
+            }
+
+            if (selectedModelKind) {
+                selectedModelKind.textContent = kind;
+            }
+
             selectedModelCost.textContent = `${modelCostRaw} credits`;
-            selectedModelCostPill.textContent = `${modelCostRaw} credits`;
 
             const enoughBalance = currentBalance >= modelCost;
             balanceCheckText.textContent = enoughBalance

@@ -16,19 +16,21 @@ from technical_document_ml_service.services.document_storage_service import (
     delete_stored_files,
     save_documents,
 )
-from technical_document_ml_service.services.mappers import sync_task_orm_from_domain
+from technical_document_ml_service.services.mappers import (
+    model_orm_to_domain,
+    orm_to_domain_user,
+    sync_task_orm_from_domain,
+)
 from technical_document_ml_service.services.orm_queries import (
     get_model_orm_by_name_or_raise,
     get_user_orm_or_raise,
 )
-from technical_document_ml_service.services.prediction_service import (
+from technical_document_ml_service.services.prediction_persistence import (
     build_domain_documents,
     ensure_prediction_can_start,
-    model_orm_to_domain,
     persist_task,
     persist_uploaded_documents,
 )
-from technical_document_ml_service.services.mappers import orm_to_domain_user
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +42,7 @@ class PredictionSubmissionResult:
     model_name: str
     status: TaskStatus
     created_at: datetime
+    callback_url: str | None
 
 
 def submit_document_prediction(
@@ -49,6 +52,7 @@ def submit_document_prediction(
     model_name: str,
     target_schema: str,
     documents: list[IncomingDocumentData],
+    callback_url: str | None = None,
 ) -> PredictionSubmissionResult:
     """
     поставить задачу обработки документов в очередь
@@ -95,6 +99,7 @@ def submit_document_prediction(
             model_id=domain_model.id,
             documents=domain_documents,
             target_schema=target_schema,
+            callback_url=callback_url,
         )
         task.mark_as_queued()
 
@@ -125,6 +130,7 @@ def submit_document_prediction(
             model_name=domain_model.name,
             status=task.status,
             created_at=task.created_at,
+            callback_url=callback_url,
         )
 
     except Exception:

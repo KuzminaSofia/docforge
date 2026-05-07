@@ -1,124 +1,154 @@
 {% extends "base.html" %}
 
-{% block content %}
-<section class="page-section">
-    <div class="page-header-block">
-        <div>
-            <p class="eyebrow">История</p>
-            <h1>История операций и предсказаний</h1>
-        </div>
-    </div>
+{% block page_container %}
+<section class="forge-page">
+    {% include "partials/sidebar.html" %}
 
-    <article class="card">
-        <form method="get" action="{{ request.url_for('history_page') }}" class="filter-form">
-            <label class="form-label compact">
-                <span>Лимит</span>
-                <input type="number" name="limit" value="{{ limit }}" min="1" max="100">
-            </label>
+    <main class="forge-main">
+        <header class="forge-topbar">
+            <div class="forge-project-title">Операции</div>
 
-            <label class="form-label compact">
-                <span>Offset</span>
-                <input type="number" name="offset" value="{{ offset }}" min="0">
-            </label>
+            <div class="forge-steps">
+                <span class="forge-step forge-step-active">История</span>
+            </div>
 
-            <button type="submit" class="button button-secondary">
-                Применить
-            </button>
-        </form>
-    </article>
+            <a class="button button-primary" href="{{ request.url_for('predict_page') }}">
+                Новая обработка
+            </a>
+        </header>
 
-    <div class="history-grid">
-        <article class="card">
-            <h2>Транзакции</h2>
-
-            {% if transactions %}
-                <div class="table-wrapper">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Дата</th>
-                                <th>Тип</th>
-                                <th>Сумма</th>
-                                <th>Task ID</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in transactions %}
-                                <tr>
-                                    <td>{{ item.created_at }}</td>
-                                    <td>
-                                        <span class="status-pill status-pill-neutral">
-                                            {{ item.transaction_type }}
-                                        </span>
-                                    </td>
-                                    <td>{{ item.amount }}</td>
-                                    <td class="mono">
-                                        {% if item.task_id %}
-                                            <a href="{{ request.url_for('task_detail_page', task_id=item.task_id) }}">
-                                                {{ item.task_id }}
-                                            </a>
-                                        {% else %}
-                                            —
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+        <section class="forge-content">
+            <div class="page-header-block">
+                <div>
+                    <p class="eyebrow">История</p>
+                    <h1>Операции и обработки</h1>
+                    <p class="muted">
+                        Здесь отображаются финансовые операции пользователя и история ML-обработок.
+                    </p>
                 </div>
-            {% else %}
-                <p class="muted">Транзакций пока нет.</p>
-            {% endif %}
-        </article>
+            </div>
 
-        <article class="card">
-            <h2>Предсказания</h2>
+            <article class="card">
+                <form method="get" action="{{ request.url_for('history_page') }}" class="filter-form">
+                    <label class="form-label compact">
+                        <span>Limit</span>
+                        <input type="number" name="limit" value="{{ limit }}" min="1" max="100">
+                    </label>
 
-            {% if predictions %}
-                <div class="table-wrapper">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Создано</th>
-                                <th>Завершено</th>
-                                <th>Статус</th>
-                                <th>Списано</th>
-                                <th>Task ID</th>
-                                <th>Model ID</th>
-                                <th>Result ID</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in predictions %}
-                                <tr>
-                                    <td>{{ item.created_at }}</td>
-                                    <td>{{ item.completed_at or "—" }}</td>
-                                    <td>
-                                        <span class="status-pill status-pill-{{ item.status }}">
-                                            {{ item.status }}
-                                        </span>
-                                    </td>
-                                    <td>{{ item.spent_credits }}</td>
-                                    <td class="mono">
-                                        {% if item.task_id %}
-                                            <a href="{{ request.url_for('task_detail_page', task_id=item.task_id) }}">
-                                                {{ item.task_id }}
-                                            </a>
-                                        {% else %}
-                                            —
-                                        {% endif %}
-                                    </td>
-                                    <td class="mono">{{ item.model_id }}</td>
-                                    <td class="mono">{{ item.result_id or "—" }}</td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            {% else %}
-                <p class="muted">История предсказаний пока пуста.</p>
-            {% endif %}
-        </article>
-    </div>
+                    <label class="form-label compact">
+                        <span>Offset</span>
+                        <input type="number" name="offset" value="{{ offset }}" min="0">
+                    </label>
+
+                    <button type="submit" class="button button-secondary">
+                        Применить
+                    </button>
+                </form>
+            </article>
+
+            <div class="history-grid">
+                <article class="card">
+                    <h2>Транзакции</h2>
+
+                    {% if transactions %}
+                        <div class="table-wrapper">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Дата</th>
+                                        <th>Тип</th>
+                                        <th>Сумма</th>
+                                        <th>ID обработки</th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    {% for item in transactions %}
+                                        <tr>
+                                            <td>{{ item.created_at }}</td>
+
+                                            <td>
+                                                <span class="status-pill status-pill-neutral">
+                                                    {{ item.transaction_type }}
+                                                </span>
+                                            </td>
+
+                                            <td>{{ item.amount }}</td>
+
+                                            <td class="mono">
+                                                {% if item.task_id %}
+                                                    <a href="{{ request.url_for('task_detail_page', task_id=item.task_id) }}">
+                                                        {{ item.task_id }}
+                                                    </a>
+                                                {% else %}
+                                                    —
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="muted">Транзакций пока нет.</p>
+                    {% endif %}
+                </article>
+
+                <article class="card">
+                    <h2>Обработки</h2>
+
+                    {% if predictions %}
+                        <div class="table-wrapper">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Создано</th>
+                                        <th>Завершено</th>
+                                        <th>Статус</th>
+                                        <th>Списано</th>
+                                        <th>ID обработки</th>
+                                        <th>Model ID</th>
+                                        <th>Result ID</th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    {% for item in predictions %}
+                                        <tr>
+                                            <td>{{ item.created_at }}</td>
+                                            <td>{{ item.completed_at or "—" }}</td>
+
+                                            <td>
+                                                <span class="status-pill status-pill-{{ item.status }}">
+                                                    {{ item.status }}
+                                                </span>
+                                            </td>
+
+                                            <td>{{ item.spent_credits }}</td>
+
+                                            <td class="mono">
+                                                {% if item.task_id %}
+                                                    <a href="{{ request.url_for('task_detail_page', task_id=item.task_id) }}">
+                                                        {{ item.task_id }}
+                                                    </a>
+                                                {% else %}
+                                                    —
+                                                {% endif %}
+                                            </td>
+
+                                            <td class="mono">{{ item.model_id }}</td>
+                                            <td class="mono">{{ item.result_id or "—" }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <p class="muted">История обработок пока пуста.</p>
+                    {% endif %}
+                </article>
+            </div>
+        </section>
+    </main>
 </section>
 {% endblock %}

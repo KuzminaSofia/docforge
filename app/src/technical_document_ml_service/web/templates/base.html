@@ -3,41 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ page_title }} · Technical Document ML Service</title>
-    <link rel="stylesheet" href="{{ request.url_for('static', path='css/app.css') }}">
+    <title>{{ page_title }} · DocForge</title>
+    <link rel="stylesheet" href="{{ request.url_for('static', path='css/app.css') }}?v=20260505-3">
 </head>
-<body>
-    <header class="site-header">
-        <div class="container header-inner">
-            <a class="brand" href="{{ request.url_for('home_page') }}">
-                Technical Document ML Service
-            </a>
+<body class="{{ body_class | default('') }}">
+    {% if not hide_site_header %}
+        <header class="site-header">
+            <div class="container header-inner">
+                <a class="brand" href="{{ request.url_for('home_page') }}">
+                    DocForge
+                </a>
 
-            <nav class="main-nav">
-                <a href="{{ request.url_for('home_page') }}">Главная</a>
+                <nav class="main-nav">
+                    <a href="{{ request.url_for('home_page') }}">Главная</a>
 
-                {% if current_user %}
-                    <a href="{{ request.url_for('dashboard_page') }}">Кабинет</a>
-                    <a href="{{ request.url_for('balance_page') }}">Баланс</a>
-                    <a href="{{ request.url_for('predict_page') }}">Новая задача</a>
-                    <a href="{{ request.url_for('tasks_page') }}">Задачи</a>
-                    <a href="{{ request.url_for('history_page') }}">История</a>
+                    {% if current_user %}
+                        <a href="{{ request.url_for('dashboard_page') }}">Кабинет</a>
+                        <a href="{{ request.url_for('predict_page') }}">Новый документ</a>
+                        <a href="{{ request.url_for('tasks_page') }}">История запросов</a>
+                        <a href="{{ request.url_for('balance_page') }}">Баланс</a>
+                        <a href="{{ request.url_for('history_page') }}">Операции</a>
 
-                    <form method="post" action="{{ request.url_for('logout_action') }}" class="inline-form">
-                        <button type="submit" class="link-button">Выйти</button>
-                    </form>
-                {% else %}
-                    <a href="{{ request.url_for('login_page') }}">Вход</a>
-                    <a href="{{ request.url_for('register_page') }}" class="nav-accent">Регистрация</a>
-                {% endif %}
-            </nav>
-        </div>
-    </header>
+                        <form method="post" action="{{ request.url_for('logout_action') }}" class="inline-form">
+                            <button type="submit" class="link-button">Выйти</button>
+                        </form>
+                    {% else %}
+                        <a href="{{ request.url_for('login_page') }}">Вход</a>
+                        <a href="{{ request.url_for('register_page') }}" class="nav-accent">Регистрация</a>
+                    {% endif %}
+                </nav>
+            </div>
+        </header>
+    {% endif %}
 
-    <main class="page-content">
-        <div class="container">
-            {% block content %}{% endblock %}
-        </div>
+    <main class="page-content {{ page_content_class | default('') }}">
+        {% block page_container %}
+            <div class="container">
+                {% block content %}{% endblock %}
+            </div>
+        {% endblock %}
     </main>
 </body>
 </html>

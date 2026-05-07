@@ -1,4 +1,4 @@
-# Technical Document ML Service
+# DocForge
 
 ## Тема проекта
 
@@ -25,6 +25,7 @@
 - просмотр артефактов обработки документов;
 - просмотр истории ML-запросов;
 - просмотр истории транзакций;
+- получение webhook-уведомления о завершении задачи на произвольный callback URL;
 - работа через Web UI и REST API
 
 ---
@@ -287,6 +288,27 @@ GET /tasks/{task_id}/result
 
 ---
 
+## Webhook-уведомления
+
+При отправке задачи через `POST /predict` можно указать необязательный параметр `callback_url`
+После завершения обработки (статус `completed` или `failed`) сервис отправит POST-запрос на указанный URL с JSON-телом:
+
+```json
+{
+  "task_id": "...",
+  "status": "completed",
+  "model_name": "docling",
+  "result_id": "...",
+  "spent_credits": "10",
+  "error_message": null,
+  "completed_at": "2026-05-06T12:00:00+00:00"
+}
+```
+
+доставка осуществляется до 3 попыток с задержками 1s и 3s между ними. сбой доставки логируется
+
+---
+
 ## База данных
 
 В PostgreSQL хранятся:
@@ -368,37 +390,3 @@ docker compose up -d --build
 Дополнительно можно открыть RabbitMQ UI и убедиться, что задачи проходят через очередь:
 `http://localhost:15672`
 
----
-
-## Запуск проекта
-Сборка и запуск сервисов:
-`docker compose up -d --build`
-
-Проверка работоспособности приложения:
-`curl http://localhost/health`
-
-Ожидаемый результат:
-`{"status":"ok"}`
-
-## Запуск тестов
-Тесты запускаются внутри контейнера `app`:
-`docker compose run --rm app pytest -q`
-
-Ожидаемый результат на данном этапе:
-`59 passed`
-
-## RabbitMQ UI
-доступен по адресу:
-`http://localhost:15672`
-
-по умолчанию:
-- login: `guest`
-- password: `guest`
-
-## Swagger UI
-доступен по адресу:
-`http://localhost/docs`
-
-## Web UI
-доступен по адресу:
-`http://localhost/`

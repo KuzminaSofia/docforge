@@ -184,7 +184,7 @@ class PredictionResultDetailsResponse(BaseModel):
             task_id=item.task_id,
             extracted_data=item.extracted_data,
             validation_issues=[
-                ValidationIssueResponse.from_domain(issue)
+                ValidationIssueResponse.from_item(issue)
                 for issue in item.validation_issues
             ],
             output_path=item.output_path,

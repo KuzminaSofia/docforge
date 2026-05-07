@@ -10,6 +10,7 @@ from technical_document_ml_service.domain.exceptions import (
     AuthenticationError,
     AuthorizationError,
     DomainError,
+    FileSizeLimitError,
     InsufficientBalanceError,
     InvalidAmountError,
     ModelUnavailableError,
@@ -104,6 +105,16 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=status.HTTP_409_CONFLICT,
             content=_error_payload(
                 code="model_unavailable",
+                message=str(exc),
+            ),
+        )
+
+    @app.exception_handler(FileSizeLimitError)
+    async def handle_file_size_limit(_: Request, exc: FileSizeLimitError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            content=_error_payload(
+                code="file_size_limit_exceeded",
                 message=str(exc),
             ),
         )

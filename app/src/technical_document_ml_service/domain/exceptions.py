@@ -35,3 +35,7 @@ class TaskExecutionError(DomainError):
 
 class ModelUnavailableError(DomainError):
     """ошибка, возникающая при обращении к недоступной ML-модели"""
+
+
+class FileSizeLimitError(DomainError):
+    """ошибка, возникающая при превышении допустимого размера загружаемого файла или задачи"""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -185,35 +186,13 @@ class UploadedDocument(BaseEntity):
         return self._mime_type in self.SUPPORTED_MIME_TYPES
 
 
-class ValidationIssue(BaseEntity):
-    """описание ошибки или замечания, найденного при валидации данных"""
+@dataclass(frozen=True, slots=True)
+class ValidationIssue:
+    """ошибка или замечание, найденное при валидации входных данных"""
 
-    def __init__(
-        self,
-        field_name: str,
-        message: str,
-        raw_value: Any | None = None,
-        entity_id: UUID | None = None,
-    ) -> None:
-        super().__init__(entity_id=entity_id)
-        self._field_name: str = field_name
-        self._message: str = message
-        self._raw_value: Any | None = raw_value
-
-    @property
-    def field_name(self) -> str:
-        """вернуть имя поля, в котором обнаружена ошибка"""
-        return self._field_name
-
-    @property
-    def message(self) -> str:
-        """вернуть текст ошибки валидации"""
-        return self._message
-
-    @property
-    def raw_value(self) -> Any | None:
-        """вернуть исходное ошибочное значение, если оно есть"""
-        return self._raw_value
+    field_name: str
+    message: str
+    raw_value: Any | None = None
 
 
 class PredictionResult(BaseEntity):
@@ -592,6 +571,7 @@ class DocumentExtractionTask(MLTask):
         error_message: str | None = None,
         spent_credits: Decimal = Decimal("0"),
         result_id: UUID | None = None,
+        callback_url: str | None = None,
     ) -> None:
         super().__init__(
             user_id=user_id,
@@ -607,6 +587,7 @@ class DocumentExtractionTask(MLTask):
         )
         self._documents: list[UploadedDocument] = documents
         self._target_schema: str = target_schema
+        self._callback_url: str | None = callback_url
 
     @property
     def documents(self) -> list[UploadedDocument]:
@@ -617,6 +598,11 @@ class DocumentExtractionTask(MLTask):
     def target_schema(self) -> str:
         """вернуть название целевой схемы извлечения"""
         return self._target_schema
+
+    @property
+    def callback_url(self) -> str | None:
+        """вернуть URL для webhook-уведомления о завершении задачи"""
+        return self._callback_url
 
     def get_valid_documents(self) -> list[UploadedDocument]:
         """вернуть только те документы, которые прошли базовую проверку формата"""

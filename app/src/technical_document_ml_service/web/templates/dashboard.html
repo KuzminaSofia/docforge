@@ -1,67 +1,88 @@
 {% extends "base.html" %}
 
-{% block content %}
-<section class="dashboard-section">
-    <div class="dashboard-header card">
-        <div>
-            <p class="eyebrow">Личный кабинет</p>
-            <h1>Здравствуйте, {{ current_user.email }}</h1>
-            <p class="muted">
-                В кабинете доступны пополнение баланса, отправка ML-задач,
-                список задач и история операций.
-            </p>
-        </div>
+{% block page_container %}
+<section class="forge-page">
+    {% include "partials/sidebar.html" %}
 
-        <div class="balance-box">
-            <span class="balance-label">Баланс</span>
-            <strong class="balance-value">{{ current_user.balance_credits }}</strong>
-            <span class="balance-caption">кредитов</span>
-        </div>
-    </div>
+    <main class="forge-main">
+        <header class="forge-topbar">
+            <div class="forge-project-title">Кабинет</div>
 
-    <div class="quick-actions">
-        <a class="button button-primary" href="{{ request.url_for('predict_page') }}">
-            Создать ML-задачу
-        </a>
-        <a class="button button-secondary" href="{{ request.url_for('balance_page') }}">
-            Пополнить баланс
-        </a>
-        <a class="button button-secondary" href="{{ request.url_for('tasks_page') }}">
-            Открыть задачи
-        </a>
-        <a class="button button-secondary" href="{{ request.url_for('history_page') }}">
-            Открыть историю
-        </a>
-    </div>
+            <div class="forge-steps">
+                <span class="forge-step forge-step-active">Обзор</span>
+            </div>
 
-    <div class="dashboard-grid">
-        <article class="card">
-            <h2>Аккаунт</h2>
-            <dl class="kv-list">
+            <a class="button button-primary" href="{{ request.url_for('predict_page') }}">
+                Новая обработка
+            </a>
+        </header>
+
+        <section class="forge-content">
+            <div class="dashboard-header card">
                 <div>
-                    <dt>Email</dt>
-                    <dd>{{ current_user.email }}</dd>
+                    <p class="eyebrow">Личный кабинет</p>
+                    <h1>Здравствуйте, {{ current_user.email }}</h1>
+                    <p class="muted">
+                        Здесь собраны основные действия: загрузка документов,
+                        просмотр обработок, операций и управление аккаунтом.
+                    </p>
                 </div>
-                <div>
-                    <dt>Роль</dt>
-                    <dd>{{ current_user.role }}</dd>
-                </div>
-                <div>
-                    <dt>Статус</dt>
-                    <dd>{% if current_user.is_active %}active{% else %}inactive{% endif %}</dd>
-                </div>
-            </dl>
-        </article>
 
-        <article class="card">
-            <h2>Доступные сценарии</h2>
-            <ul class="feature-list">
-                <li>Пополнить баланс без эквайринга</li>
-                <li>Загрузить документы и создать ML-задачу</li>
-                <li>Отслеживать статус асинхронной обработки</li>
-                <li>Просматривать историю операций и предсказаний</li>
-            </ul>
-        </article>
-    </div>
+                <div class="balance-box">
+                    <span class="balance-label">Баланс</span>
+                    <strong class="balance-value">{{ current_user.balance_credits }}</strong>
+                    <span class="balance-caption">кредитов</span>
+                </div>
+            </div>
+
+            <div class="quick-actions">
+                <a class="button button-primary" href="{{ request.url_for('predict_page') }}">
+                    Запустить обработку
+                </a>
+
+                <a class="button button-secondary" href="{{ request.url_for('tasks_page') }}">
+                    Открыть документы
+                </a>
+
+                <a class="button button-secondary" href="{{ request.url_for('history_page') }}">
+                    История операций
+                </a>
+            </div>
+
+            <div class="dashboard-grid">
+                <article class="card">
+                    <h2>Аккаунт</h2>
+
+                    <dl class="kv-list">
+                        <div>
+                            <dt>Email</dt>
+                            <dd>{{ current_user.email }}</dd>
+                        </div>
+
+                        <div>
+                            <dt>Роль</dt>
+                            <dd>{{ current_user.role }}</dd>
+                        </div>
+
+                        <div>
+                            <dt>Статус</dt>
+                            <dd>{% if current_user.is_active %}active{% else %}inactive{% endif %}</dd>
+                        </div>
+                    </dl>
+                </article>
+
+                <article class="card">
+                    <h2>Рабочий процесс</h2>
+
+                    <ul class="feature-list">
+                        <li>Загрузить PDF или изображение технического документа</li>
+                        <li>Поставить задачу обработки в очередь</li>
+                        <li>Дождаться выполнения worker-сервисом</li>
+                        <li>Открыть Markdown, JSON и служебные артефакты результата</li>
+                    </ul>
+                </article>
+            </div>
+        </section>
+    </main>
 </section>
 {% endblock %}

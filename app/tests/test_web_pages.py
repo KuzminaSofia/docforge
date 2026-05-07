@@ -99,6 +99,6 @@ def test_history_page_renders_server_side(
     response = client.get("/history-ui")
 
     assert response.status_code == 200
-    assert "История операций и предсказаний" in response.text
+    assert "Операции и обработки" in response.text
     assert "Транзакции" in response.text
-    assert "Предсказания" in response.text
+    assert "Обработки" in response.text

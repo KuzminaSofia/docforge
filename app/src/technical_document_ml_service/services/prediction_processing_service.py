@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -31,15 +31,16 @@ from technical_document_ml_service.services.inference_mappers import (
     build_prediction_result_from_backend_result,
 )
 from technical_document_ml_service.services.mappers import (
-    document_orm_to_domain,
+    model_orm_to_domain,
     orm_to_domain_user,
     sync_task_orm_from_domain,
     sync_user_orm_from_domain,
+    task_orm_to_domain,
 )
-from technical_document_ml_service.services.prediction_service import (
-    model_orm_to_domain,
+from technical_document_ml_service.services.prediction_persistence import (
     persist_prediction_result,
 )
+from technical_document_ml_service.services.webhook_service import send_task_webhook
 
 
 LOGGER = logging.getLogger("technical_document_ml_service.prediction_processing")
@@ -57,28 +58,6 @@ class PredictionProcessingResult:
     spent_credits: Decimal
     was_processed: bool
     message: str
-
-
-def _task_orm_to_domain(task_orm: MLTaskORM) -> DocumentExtractionTask:
-    """преобразовать ORM-задачу в доменную задачу извлечения документов"""
-    result_id = None
-    if task_orm.prediction_result is not None:
-        result_id = task_orm.prediction_result.id
-
-    return DocumentExtractionTask(
-        user_id=task_orm.user_id,
-        model_id=task_orm.model_id,
-        documents=[document_orm_to_domain(document) for document in task_orm.documents],
-        target_schema=task_orm.target_schema or "",
-        entity_id=task_orm.id,
-        status=TaskStatus(task_orm.status),
-        created_at=task_orm.created_at,
-        started_at=task_orm.started_at,
-        finished_at=task_orm.completed_at,
-        error_message=task_orm.error_message,
-        spent_credits=task_orm.spent_credits,
-        result_id=result_id,
-    )
 
 
 def _load_task_for_processing(session: Session, task_id: UUID) -> MLTaskORM | None:
@@ -131,7 +110,7 @@ def _mark_task_as_failed(
     if persisted_task_orm is None:
         return
 
-    domain_task = _task_orm_to_domain(persisted_task_orm)
+    domain_task = task_orm_to_domain(persisted_task_orm)
     domain_task.fail(error_message)
     sync_task_orm_from_domain(persisted_task_orm, domain_task)
     session.commit()
@@ -177,6 +156,13 @@ def process_document_prediction_task(
     if task_orm is None:
         raise NotFoundError(f"Задача с id={task_id} не найдена.")
 
+    # извлекаем infrastructure-поля ORM до перехода на доменные объекты
+    callback_url: str | None = task_orm.callback_url
+    model_name_for_webhook: str = task_orm.model.name
+    model_backend_name: str = task_orm.model.backend_name
+    model_kind: str = task_orm.model.model_kind
+    model_backend_config: dict = dict(task_orm.model.backend_config or {})
+
     current_status = TaskStatus(task_orm.status)
 
     if current_status == TaskStatus.COMPLETED:
@@ -214,7 +200,7 @@ def process_document_prediction_task(
 
     domain_user = orm_to_domain_user(task_orm.user)
     domain_model = model_orm_to_domain(task_orm.model)
-    domain_task = _task_orm_to_domain(task_orm)
+    domain_task = task_orm_to_domain(task_orm)
 
     try:
         _ensure_processing_can_start(
@@ -231,16 +217,16 @@ def process_document_prediction_task(
 
         backend_request = build_backend_request(
             task=domain_task,
-            model_id=task_orm.model.id,
-            model_name=task_orm.model.name,
-            model_kind=task_orm.model.model_kind,
-            backend_name=task_orm.model.backend_name,
-            backend_config=task_orm.model.backend_config,
+            model_id=domain_model.id,
+            model_name=domain_model.name,
+            model_kind=model_kind,
+            backend_name=model_backend_name,
+            backend_config=model_backend_config,
         )
 
         backend_selection = select_prediction_backend(
-            requested_backend_name=task_orm.model.backend_name,
-            backend_config=task_orm.model.backend_config,
+            requested_backend_name=model_backend_name,
+            backend_config=model_backend_config,
         )
 
         domain_task.mark_as_processing()
@@ -290,6 +276,18 @@ def process_document_prediction_task(
 
         session.commit()
 
+        if callback_url:
+            send_task_webhook(
+                url=callback_url,
+                task_id=domain_task.id,
+                status=domain_task.status,
+                model_name=model_name_for_webhook,
+                result_id=domain_task.result_id,
+                spent_credits=domain_task.spent_credits,
+                completed_at=domain_task.finished_at,
+                error_message=None,
+            )
+
         return PredictionProcessingResult(
             task_id=domain_task.id,
             status=domain_task.status,
@@ -308,9 +306,23 @@ def process_document_prediction_task(
         if session.in_transaction():
             session.rollback()
 
+        error_text = str(exc)
         _mark_task_as_failed(
             session,
             task_id=task_id,
-            error_message=str(exc),
+            error_message=error_text,
         )
+
+        if callback_url:
+            send_task_webhook(
+                url=callback_url,
+                task_id=task_id,
+                status=TaskStatus.FAILED,
+                model_name=model_name_for_webhook,
+                result_id=None,
+                spent_credits=Decimal("0"),
+                completed_at=datetime.now(UTC),
+                error_message=error_text,
+            )
+
         raise

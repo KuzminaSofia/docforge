@@ -27,7 +27,7 @@ def test_predict_page_renders_for_authenticated_user(
     response = client.get("/predict-ui")
 
     assert response.status_code == 200
-    assert "Создать новую задачу" in response.text
+    assert "Новая обработка документа" in response.text
     assert api_model.name in response.text
 
 
@@ -113,8 +113,10 @@ def test_tasks_page_renders_and_filters_queued_tasks(
     response = client.get("/tasks-ui?status=queued&limit=50&offset=0")
 
     assert response.status_code == 200
-    assert "Список ML-задач" in response.text
-    assert api_model.name in response.text
+    assert "История обработок" in response.text
+    assert "ID обработки" in response.text
+    assert "queued-task.pdf" in response.text
+    assert "преобразование" in response.text
     assert "queued" in response.text
 
 
@@ -149,9 +151,16 @@ def test_task_detail_page_renders_after_submit(
     response = client.get(task_location)
 
     assert response.status_code == 200
-    assert "Детали задачи" in response.text
+    assert "Преобразование" in response.text
     assert "detail-view.pdf" in response.text
     assert api_model.name in response.text
+
+    assert "Обработка документа" in response.text
+
+    assert "Результат преобразования" in response.text
+    assert "Markdown" in response.text
+    assert "Артефакты" in response.text
+    assert "JSON результата" in response.text
 
 
 def test_task_filter_with_invalid_status_shows_error_on_page(
@@ -179,6 +188,6 @@ def test_predict_page_contains_balance_and_cost_widgets(
     response = client.get("/predict-ui")
 
     assert response.status_code == 200
-    assert "Баланс и стоимость" in response.text
+    assert "Проверка баланса" in response.text
     assert api_model.name in response.text
     assert re.search(r"100(?:\.00)?", response.text) is not None
