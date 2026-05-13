@@ -112,7 +112,7 @@ export default async function TasksPage({
         {tasks.length > 0 && (
           <div className="overflow-hidden rounded-xl border border-border bg-card">
             {/* Шапка таблицы */}
-            <div className="grid grid-cols-[160px_1fr_130px_100px_80px] gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <div className="grid grid-cols-[140px_minmax(0,1fr)_120px_80px_72px] gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <span>Дата</span>
               <span>Файл / ID</span>
               <span>Статус</span>
@@ -125,7 +125,7 @@ export default async function TasksPage({
                 <li key={task.id}>
                   <Link
                     href={`/tasks/${task.id}`}
-                    className="grid grid-cols-[160px_1fr_130px_100px_80px] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-accent/50"
+                    className="grid grid-cols-[140px_minmax(0,1fr)_120px_80px_72px] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-accent/50"
                   >
                     {/* Дата */}
                     <span className="text-xs text-muted-foreground">
@@ -135,10 +135,10 @@ export default async function TasksPage({
                     {/* Файл / ID */}
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-foreground">
-                        {task.first_document_name ?? `Задача ${task.id.slice(0, 8)}…`}
+                        {task.first_document_name ?? task.id}
                       </p>
-                      <p className="font-mono text-xs text-muted-foreground">
-                        {task.id.slice(0, 8)}…
+                      <p className="truncate font-mono text-xs text-primary/70">
+                        {task.id}
                       </p>
                     </div>
 

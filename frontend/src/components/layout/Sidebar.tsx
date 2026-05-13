@@ -16,7 +16,6 @@ const NAV_SECTIONS = [
     title: "Сервис",
     links: [
       { href: "/history", label: "Операции" },
-      { href: "/balance", label: "Баланс" },
     ],
   },
 ];
@@ -40,7 +39,7 @@ export function Sidebar({ user }: SidebarProps) {
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-2">
         {NAV_SECTIONS.map((section) => (
           <div key={section.title}>
-            <p className="mb-1 px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60 select-none">
               {section.title}
             </p>
             <div className="space-y-0.5">

@@ -44,15 +44,33 @@ export function throwForStatus(status: number, detail: string): never {
   throw new ApiError(status, detail);
 }
 
+const HTTP_FALLBACKS: Record<number, string> = {
+  400: "Некорректный запрос.",
+  401: "Необходима авторизация.",
+  403: "Доступ запрещён.",
+  404: "Ресурс не найден.",
+  409: "Конфликт данных.",
+  413: "Файл слишком большой.",
+  422: "Ошибка валидации входных данных.",
+  429: "Слишком много запросов. Повторите позже.",
+  500: "Внутренняя ошибка сервера.",
+  502: "Сервис временно недоступен.",
+  503: "Сервис временно недоступен.",
+};
+
 export async function extractErrorDetail(res: Response): Promise<string> {
   try {
     const data = await res.json();
+    // Backend custom format: { error: { code, message } }
+    if (typeof data.error?.message === "string") return data.error.message;
+    // FastAPI standard format: { detail: "..." }
     if (typeof data.detail === "string") return data.detail;
+    // FastAPI validation format: { detail: [{ msg: "..." }] }
     if (Array.isArray(data.detail)) {
       return data.detail.map((e: { msg: string }) => e.msg).join("; ");
     }
   } catch {
-    // ignore parse error, fall through to statusText
+    // ignore JSON parse error
   }
-  return res.statusText || `HTTP ${res.status}`;
+  return HTTP_FALLBACKS[res.status] ?? res.statusText ?? `HTTP ${res.status}`;
 }

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { clientFetch } from "@/lib/api/client";
+import { clientFetch, clientFetchText } from "@/lib/api/client";
 import { formatDateTime } from "@/lib/format";
 import { TaskStatusBadge } from "@/components/tasks/TaskStatusBadge";
 import { cn } from "@/lib/utils";
@@ -40,35 +40,36 @@ export function TaskDetailClient({ taskId, initial }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("meta");
   const [markdownContent, setMarkdownContent] = useState<string | null>(null);
   const [markdownLoading, setMarkdownLoading] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const status = data.task.status;
   const isTerminal = TERMINAL_STATUSES.includes(status);
 
-  // polling
+  // polling — recursive setTimeout prevents accumulation of in-flight requests
   useEffect(() => {
     if (isTerminal) return;
 
     const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-    intervalRef.current = setInterval(async () => {
+    async function poll() {
       try {
         const fresh = await clientFetch<TaskResultResponse>(`/tasks/${taskId}/result`, {
           signal: controller.signal,
         });
         setData(fresh);
-        if (TERMINAL_STATUSES.includes(fresh.task.status)) {
-          clearInterval(intervalRef.current!);
+        if (!TERMINAL_STATUSES.includes(fresh.task.status)) {
+          timeoutId = setTimeout(poll, POLL_INTERVAL_MS);
         }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
-        // ignore other transient network errors
+        timeoutId = setTimeout(poll, POLL_INTERVAL_MS);
       }
-    }, POLL_INTERVAL_MS);
+    }
 
+    timeoutId = setTimeout(poll, POLL_INTERVAL_MS);
     return () => {
       controller.abort();
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, [taskId, isTerminal]);
 
@@ -82,13 +83,11 @@ export function TaskDetailClient({ taskId, initial }: Props) {
 
     const controller = new AbortController();
     setMarkdownLoading(true);
-    fetch(`/api/tasks/${taskId}/artifacts/${encodeURIComponent(md.name)}`, {
-      credentials: "include",
+    clientFetchText(`/tasks/${taskId}/artifacts/${encodeURIComponent(md.name)}`, {
       signal: controller.signal,
     })
-      .then((r) => (r.ok ? r.text() : null))
       .then((text) => setMarkdownContent(text))
-      .catch((err) => { if (err?.name !== "AbortError") setMarkdownContent(null); })
+      .catch((err) => { if (err instanceof Error && err.name !== "AbortError") setMarkdownContent(null); })
       .finally(() => setMarkdownLoading(false));
 
     return () => controller.abort();

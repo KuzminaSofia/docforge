@@ -8,12 +8,7 @@ type FetchOptions = Omit<RequestInit, "body"> & {
   body?: RequestInit["body"] | Record<string, unknown>;
 };
 
-/**
- * Client-side fetch for use in Client Components.
- * Uses relative /api path (proxied via nginx to FastAPI).
- * Sends cookies automatically (same-origin credentials).
- */
-export async function clientFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
+async function clientRequest(path: string, options: FetchOptions = {}): Promise<Response> {
   const { params, body, headers: extraHeaders, ...init } = options;
   const url = buildApiUrl(BASE, path, params);
 
@@ -40,7 +35,20 @@ export async function clientFetch<T>(path: string, options: FetchOptions = {}): 
     throwForStatus(res.status, detail);
   }
 
-  return res.json() as Promise<T>;
+  return res;
+}
+
+/**
+ * Client-side fetch for use in Client Components.
+ * Uses relative /api path (proxied via nginx to FastAPI).
+ * Sends cookies automatically (same-origin credentials).
+ */
+export async function clientFetch<T>(path: string, options: FetchOptions = {}): Promise<T> {
+  return (await clientRequest(path, options)).json() as Promise<T>;
+}
+
+export async function clientFetchText(path: string, options: FetchOptions = {}): Promise<string> {
+  return (await clientRequest(path, options)).text();
 }
 
 /**

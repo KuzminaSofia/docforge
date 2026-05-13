@@ -143,7 +143,7 @@ function LimitSelect({ limit, activeTab }: { limit: number; activeTab: Tab }) {
 function TransactionsTable({ items }: { items: TransactionHistoryItemResponse[] }) {
   return (
     <>
-      <div className="grid grid-cols-[160px_1fr_80px_120px] gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="grid grid-cols-[140px_minmax(0,1fr)_90px_110px] gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         <span>Дата</span>
         <span>Задача</span>
         <span>Тип</span>
@@ -151,15 +151,18 @@ function TransactionsTable({ items }: { items: TransactionHistoryItemResponse[] 
       </div>
       <ul className="divide-y divide-border">
         {items.map((item) => (
-          <li key={item.id} className="grid grid-cols-[160px_1fr_80px_120px] items-center gap-x-4 px-4 py-3">
+          <li key={item.id} className="grid grid-cols-[140px_minmax(0,1fr)_90px_110px] items-center gap-x-4 px-4 py-3">
             <span className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</span>
-            <span className="font-mono text-xs text-muted-foreground truncate">
+            <span className="font-mono text-xs truncate">
               {item.task_id ? (
-                <Link href={`/tasks/${item.task_id}`} className="hover:text-foreground transition-colors">
-                  {item.task_id.slice(0, 8)}…
+                <Link
+                  href={`/tasks/${item.task_id}`}
+                  className="text-primary/80 hover:text-primary transition-colors"
+                >
+                  {item.task_id}
                 </Link>
               ) : (
-                "—"
+                <span className="text-muted-foreground">—</span>
               )}
             </span>
             <span className={cn(
@@ -188,7 +191,7 @@ function TransactionsTable({ items }: { items: TransactionHistoryItemResponse[] 
 function PredictionsTable({ items }: { items: PredictionHistoryItemResponse[] }) {
   return (
     <>
-      <div className="grid grid-cols-[160px_1fr_130px_80px] gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="grid grid-cols-[140px_minmax(0,1fr)_120px_72px] gap-x-4 border-b border-border bg-muted/40 px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
         <span>Дата</span>
         <span>Задача</span>
         <span>Статус</span>
@@ -199,12 +202,14 @@ function PredictionsTable({ items }: { items: PredictionHistoryItemResponse[] })
           <li key={item.id}>
             <Link
               href={item.task_id ? `/tasks/${item.task_id}` : "#"}
-              className="grid grid-cols-[160px_1fr_130px_80px] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-accent/50"
+              className="grid grid-cols-[140px_minmax(0,1fr)_120px_72px] items-center gap-x-4 px-4 py-3 transition-colors hover:bg-accent/50"
             >
               <span className="text-xs text-muted-foreground">{formatDateTime(item.created_at)}</span>
-              <span className="font-mono text-xs text-muted-foreground truncate">
-                {item.task_id ? `${item.task_id.slice(0, 8)}…` : "—"}
-              </span>
+              {item.task_id ? (
+                <span className="font-mono text-xs text-primary/80 truncate">{item.task_id}</span>
+              ) : (
+                <span className="font-mono text-xs text-muted-foreground">—</span>
+              )}
               <TaskStatusBadge status={item.status} />
               <span className="text-right text-xs text-muted-foreground">{item.spent_credits}</span>
             </Link>

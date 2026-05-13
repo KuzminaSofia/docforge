@@ -16,8 +16,6 @@ from technical_document_ml_service.domain.entities import (
 )
 from technical_document_ml_service.domain.enums import TaskStatus
 from technical_document_ml_service.domain.exceptions import (
-    InsufficientBalanceError,
-    ModelUnavailableError,
     NotFoundError,
     TaskExecutionError,
 )
@@ -38,6 +36,7 @@ from technical_document_ml_service.services.mappers import (
     task_orm_to_domain,
 )
 from technical_document_ml_service.services.prediction_persistence import (
+    ensure_prediction_can_start,
     persist_prediction_result,
 )
 from technical_document_ml_service.services.webhook_service import send_task_webhook
@@ -129,11 +128,7 @@ def _ensure_processing_can_start(
     if domain_model.id != domain_task.model_id:
         raise TaskExecutionError("Задача не соответствует переданной модели.")
 
-    if not domain_model.is_active:
-        raise ModelUnavailableError("Выбранная ML-модель недоступна.")
-
-    if not domain_user.can_afford(domain_model.prediction_cost):
-        raise InsufficientBalanceError("Недостаточно средств для выполнения задачи.")
+    ensure_prediction_can_start(user=domain_user, model=domain_model)
 
 
 def process_document_prediction_task(
