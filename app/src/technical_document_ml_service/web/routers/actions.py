@@ -14,6 +14,7 @@ from technical_document_ml_service.domain.exceptions import (
     AuthenticationError,
     AuthorizationError,
     FileSizeLimitError,
+    UserAlreadyExistsError,
 )
 from technical_document_ml_service.services.auth_service import (
     authenticate_user,
@@ -91,10 +92,28 @@ def register_action(
     session: SessionDep,
     email: str = Form(...),
     password: str = Form(...),
+    confirm_password: str = Form(...),
 ):
     """обработать web-форму регистрации"""
     ensure_same_origin(request)
     normalized_email = email.strip().lower()
+
+    def _register_error(message: str, status_code: int = 400):
+        return render_template(
+            request,
+            "register.html",
+            page_title="Регистрация",
+            current_user=None,
+            form_data={"email": normalized_email},
+            error_message=message,
+            status_code=status_code,
+        )
+
+    if len(password) < 8:
+        return _register_error("Пароль должен содержать не менее 8 символов.")
+
+    if password != confirm_password:
+        return _register_error("Пароли не совпадают.")
 
     try:
         user = register_user(
@@ -102,19 +121,13 @@ def register_action(
             email=normalized_email,
             password=password,
         )
+    except UserAlreadyExistsError:
+        return _register_error("Пользователь с таким email уже зарегистрирован.")
     except Exception:
         logger.exception("Unexpected error during web registration.")
-        return render_template(
-            request,
-            "register.html",
-            page_title="Регистрация",
-            current_user=None,
-            form_data={"email": normalized_email},
-            error_message=(
-                "Не удалось зарегистрировать пользователя. "
-                "Проверьте корректность данных или попробуйте другой email."
-            ),
-            status_code=400,
+        return _register_error(
+            "Не удалось зарегистрировать пользователя. Попробуйте ещё раз.",
+            status_code=500,
         )
 
     access_token, expires_in_seconds = build_access_token(

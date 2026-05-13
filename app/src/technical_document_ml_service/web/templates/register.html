@@ -5,14 +5,14 @@
     <div class="auth-card">
         <h1>Регистрация</h1>
         <p class="muted">
-            Создайте пользователя, чтобы получить доступ к личному кабинету ML-сервиса.
+            Создайте аккаунт, чтобы получить доступ к личному кабинету ML-сервиса.
         </p>
 
         {% if error_message %}
-            <div class="alert alert-error">{{ error_message }}</div>
+            <div class="alert alert-error" role="alert">{{ error_message }}</div>
         {% endif %}
 
-        <form method="post" action="{{ request.url_for('register_action') }}" class="form-stack">
+        <form method="post" action="{{ request.url_for('register_action') }}" class="form-stack" id="register-form">
             <label class="form-label">
                 <span>Email</span>
                 <input
@@ -20,21 +20,50 @@
                     name="email"
                     value="{{ form_data.email }}"
                     placeholder="you@example.com"
+                    autocomplete="email"
                     required
+                    autofocus
                 >
             </label>
 
             <label class="form-label">
                 <span>Пароль</span>
-                <input
-                    type="password"
-                    name="password"
-                    placeholder="Минимум 8 символов"
-                    required
-                >
+                <div class="password-wrapper">
+                    <input
+                        type="password"
+                        name="password"
+                        id="password"
+                        placeholder="Минимум 8 символов"
+                        autocomplete="new-password"
+                        minlength="8"
+                        required
+                    >
+                    <button type="button" class="password-toggle" aria-label="Показать пароль" data-target="password">
+                        Показать
+                    </button>
+                </div>
             </label>
 
-            <button type="submit" class="button button-primary button-full">
+            <label class="form-label">
+                <span>Повторите пароль</span>
+                <div class="password-wrapper">
+                    <input
+                        type="password"
+                        name="confirm_password"
+                        id="confirm_password"
+                        placeholder="Повторите пароль"
+                        autocomplete="new-password"
+                        minlength="8"
+                        required
+                    >
+                    <button type="button" class="password-toggle" aria-label="Показать пароль" data-target="confirm_password">
+                        Показать
+                    </button>
+                </div>
+                <span class="form-hint" id="password-match-hint"></span>
+            </label>
+
+            <button type="submit" class="button button-primary button-full" id="register-submit">
                 Зарегистрироваться
             </button>
         </form>
@@ -45,4 +74,49 @@
         </p>
     </div>
 </section>
+
+<script>
+(function () {
+    document.querySelectorAll(".password-toggle").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+            var targetId = btn.getAttribute("data-target");
+            var input = document.getElementById(targetId);
+            if (!input) return;
+            var isHidden = input.type === "password";
+            input.type = isHidden ? "text" : "password";
+            btn.textContent = isHidden ? "Скрыть" : "Показать";
+            btn.setAttribute("aria-label", isHidden ? "Скрыть пароль" : "Показать пароль");
+        });
+    });
+
+    var passwordInput = document.getElementById("password");
+    var confirmInput = document.getElementById("confirm_password");
+    var matchHint = document.getElementById("password-match-hint");
+
+    function checkMatch() {
+        if (!confirmInput.value) {
+            matchHint.textContent = "";
+            matchHint.className = "form-hint";
+            return;
+        }
+        if (passwordInput.value === confirmInput.value) {
+            matchHint.textContent = "Пароли совпадают";
+            matchHint.className = "form-hint form-hint-ok";
+        } else {
+            matchHint.textContent = "Пароли не совпадают";
+            matchHint.className = "form-hint form-hint-error";
+        }
+    }
+
+    passwordInput.addEventListener("input", checkMatch);
+    confirmInput.addEventListener("input", checkMatch);
+
+    var form = document.getElementById("register-form");
+    var submitBtn = document.getElementById("register-submit");
+    form.addEventListener("submit", function () {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Создание аккаунта…";
+    });
+}());
+</script>
 {% endblock %}

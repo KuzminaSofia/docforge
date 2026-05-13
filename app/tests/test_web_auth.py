@@ -98,6 +98,7 @@ def test_web_register_success_sets_cookie_and_redirects(
     payload = {
         "email": "web.new.user@example.com",
         "password": "strongpass123",
+        "confirm_password": "strongpass123",
     }
 
     response = client.post(
@@ -112,6 +113,67 @@ def test_web_register_success_sets_cookie_and_redirects(
 
     auth_cookie_name = get_auth_cookie_name()
     assert auth_cookie_name in client.cookies
+
+
+def test_web_register_password_mismatch_shows_error(
+    client,
+    same_origin_headers,
+) -> None:
+    payload = {
+        "email": "web.mismatch@example.com",
+        "password": "strongpass123",
+        "confirm_password": "differentpass456",
+    }
+
+    response = client.post(
+        "/register",
+        data=payload,
+        headers=same_origin_headers,
+    )
+
+    assert response.status_code == 400
+    assert "Пароли не совпадают" in response.text
+
+
+def test_web_register_short_password_shows_error(
+    client,
+    same_origin_headers,
+) -> None:
+    payload = {
+        "email": "web.short@example.com",
+        "password": "1234567",
+        "confirm_password": "1234567",
+    }
+
+    response = client.post(
+        "/register",
+        data=payload,
+        headers=same_origin_headers,
+    )
+
+    assert response.status_code == 400
+    assert "не менее 8 символов" in response.text
+
+
+def test_web_register_duplicate_email_shows_error(
+    client,
+    api_user,
+    same_origin_headers,
+) -> None:
+    payload = {
+        "email": "api.user@example.com",
+        "password": "strongpass123",
+        "confirm_password": "strongpass123",
+    }
+
+    response = client.post(
+        "/register",
+        data=payload,
+        headers=same_origin_headers,
+    )
+
+    assert response.status_code == 400
+    assert "уже зарегистрирован" in response.text
 
 
 def test_web_logout_clears_cookie(
