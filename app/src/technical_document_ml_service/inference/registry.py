@@ -58,10 +58,14 @@ class BackendRegistry:
         return tuple(sorted(self._factories.keys()))
 
 
+DOCLING_BACKEND_NAME = "docling"
+TECHNICAL_DOCUMENT_MODEL_KIND = "technical_document_extraction"
+
+
 def build_default_backend_registry() -> BackendRegistry:
     """создать реестр со стандартными backend-ами приложения"""
     registry = BackendRegistry()
-    registry.register(name="docling", factory=create_docling_backend)
+    registry.register(name=DOCLING_BACKEND_NAME, factory=create_docling_backend)
     return registry
 
 

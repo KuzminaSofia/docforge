@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+
+LOGGER = logging.getLogger("technical_document_ml_service.prediction_submission")
 
 from technical_document_ml_service.db.models import MLTaskORM
 from technical_document_ml_service.domain.entities import DocumentExtractionTask
@@ -138,15 +141,24 @@ def submit_document_prediction(
             session.rollback()
 
         if task is None or not task_persisted:
+            # Задача не попала в БД — просто удаляем файлы и пробрасываем исключение
             if saved_paths:
                 delete_stored_files(saved_paths)
             raise
 
+        # Задача уже зафиксирована в БД, но публикация в RabbitMQ провалилась.
+        # Отмечаем задачу как FAILED чтобы пользователь увидел ошибку.
         task.fail("Не удалось поставить задачу в очередь на обработку.")
 
-        persisted_task_orm = session.get(MLTaskORM, task.id)
-        if persisted_task_orm is not None:
-            sync_task_orm_from_domain(persisted_task_orm, task)
-            session.commit()
+        try:
+            persisted_task_orm = session.get(MLTaskORM, task.id)
+            if persisted_task_orm is not None:
+                sync_task_orm_from_domain(persisted_task_orm, task)
+                session.commit()
+        except Exception:
+            LOGGER.exception(
+                "task_id=%s | Не удалось пометить задачу как FAILED после сбоя публикации",
+                task.id,
+            )
 
         raise

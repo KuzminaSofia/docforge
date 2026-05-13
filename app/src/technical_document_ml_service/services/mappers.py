@@ -23,6 +23,7 @@ from technical_document_ml_service.domain.enums import (
     UserRole,
 )
 from technical_document_ml_service.domain.exceptions import TaskExecutionError
+from technical_document_ml_service.inference.registry import TECHNICAL_DOCUMENT_MODEL_KIND
 from technical_document_ml_service.services.dto import (
     PredictionHistoryItem,
     TransactionHistoryItem,
@@ -42,7 +43,7 @@ def _parse_supported_document_types(values: list[str]) -> set[DocumentType]:
 
 def model_orm_to_domain(model_orm: MLModelORM) -> TechnicalDocumentExtractionModel:
     """преобразовать ORM-модель в доменную ML-модель"""
-    if model_orm.model_kind != "technical_document_extraction":
+    if model_orm.model_kind != TECHNICAL_DOCUMENT_MODEL_KIND:
         raise TaskExecutionError("Неподдерживаемый тип ML-модели.")
 
     return TechnicalDocumentExtractionModel(

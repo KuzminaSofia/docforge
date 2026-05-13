@@ -12,6 +12,7 @@ from technical_document_ml_service.api.schemas.tasks import (
     TaskListItemResponse,
     TaskListQueryParams,
     TaskResultResponse,
+    TaskStatusResponse,
     TasksListResponse,
 )
 from technical_document_ml_service.services.artifact_service import get_task_artifact_file_path
@@ -19,6 +20,7 @@ from technical_document_ml_service.services.task_query_service import (
     get_user_task_details,
     get_user_task_result,
     get_user_tasks,
+    get_user_task_status,
 )
 
 
@@ -64,6 +66,21 @@ def get_task_details(
         task_id=task_id,
     )
     return TaskDetailsResponse.from_item(item)
+
+
+@router.get("/{task_id}/status", response_model=TaskStatusResponse)
+def get_task_status(
+    task_id: UUID,
+    session: ReadSessionDep,
+    current_user: CurrentReadUserDep,
+) -> TaskStatusResponse:
+    """получить только статус задачи — легкий endpoint для поллинга"""
+    item = get_user_task_status(
+        session,
+        user_id=current_user.id,
+        task_id=task_id,
+    )
+    return TaskStatusResponse.from_item(item)
 
 
 @router.get("/{task_id}/result", response_model=TaskResultResponse)

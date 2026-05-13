@@ -6,7 +6,7 @@ import { clientFetch, clientFetchText } from "@/lib/api/client";
 import { formatDateTime } from "@/lib/format";
 import { TaskStatusBadge } from "@/components/tasks/TaskStatusBadge";
 import { cn } from "@/lib/utils";
-import type { TaskResultResponse, TaskStatus, ValidationIssueResponse } from "@/lib/api/types";
+import type { TaskResultResponse, TaskStatus, TaskStatusResponse, ValidationIssueResponse } from "@/lib/api/types";
 
 const TERMINAL_STATUSES: TaskStatus[] = ["completed", "failed"];
 const POLL_INTERVAL_MS = 3000;
@@ -44,7 +44,8 @@ export function TaskDetailClient({ taskId, initial }: Props) {
   const status = data.task.status;
   const isTerminal = TERMINAL_STATUSES.includes(status);
 
-  // polling — recursive setTimeout prevents accumulation of in-flight requests
+  // polling — лёгкий /status endpoint вместо тяжёлого /result
+  // При достижении terminal-статуса делаем одиночный fetch полного результата
   useEffect(() => {
     if (isTerminal) return;
 
@@ -53,11 +54,20 @@ export function TaskDetailClient({ taskId, initial }: Props) {
 
     async function poll() {
       try {
-        const fresh = await clientFetch<TaskResultResponse>(`/tasks/${taskId}/result`, {
+        const statusData = await clientFetch<TaskStatusResponse>(`/tasks/${taskId}/status`, {
           signal: controller.signal,
         });
-        setData(fresh);
-        if (!TERMINAL_STATUSES.includes(fresh.task.status)) {
+
+        if (TERMINAL_STATUSES.includes(statusData.status)) {
+          const full = await clientFetch<TaskResultResponse>(`/tasks/${taskId}/result`, {
+            signal: controller.signal,
+          });
+          setData(full);
+        } else {
+          setData((prev) => ({
+            ...prev,
+            task: { ...prev.task, ...statusData },
+          }));
           timeoutId = setTimeout(poll, POLL_INTERVAL_MS);
         }
       } catch (err) {

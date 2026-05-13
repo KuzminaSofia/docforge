@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from technical_document_ml_service.db.base import Base
+from technical_document_ml_service.inference.registry import DOCLING_BACKEND_NAME
 
 
 def utc_now() -> datetime:
@@ -132,8 +133,8 @@ class MLModelORM(Base):
     backend_name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
-        default="docling",
-        server_default=text("'docling'"),
+        default=DOCLING_BACKEND_NAME,
+        server_default=text(f"'{DOCLING_BACKEND_NAME}'"),
     )
     backend_config: Mapped[dict[str, Any]] = mapped_column(
         JSONB,

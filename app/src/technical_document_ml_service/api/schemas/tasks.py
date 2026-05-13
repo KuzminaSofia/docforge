@@ -193,6 +193,28 @@ class PredictionResultDetailsResponse(BaseModel):
         )
 
 
+class TaskStatusResponse(BaseModel):
+    """легкий ответ для поллинга статуса задачи"""
+
+    id: UUID
+    status: TaskStatus
+    error_message: str | None
+    spent_credits: Decimal
+    started_at: datetime | None
+    completed_at: datetime | None
+
+    @classmethod
+    def from_item(cls, item: TaskDetailsItem) -> "TaskStatusResponse":
+        return cls(
+            id=item.id,
+            status=item.status,
+            error_message=item.error_message,
+            spent_credits=item.spent_credits,
+            started_at=item.started_at,
+            completed_at=item.completed_at,
+        )
+
+
 class TaskResultResponse(BaseModel):
     """объединенный ответ по задаче и результату"""
 

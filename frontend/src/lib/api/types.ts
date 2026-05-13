@@ -114,6 +114,15 @@ export interface PredictionsHistoryResponse {
 
 // Tasks
 
+export interface TaskStatusResponse {
+  id: string;
+  status: TaskStatus;
+  error_message: string | null;
+  spent_credits: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
 export interface TaskDocumentResponse {
   id: string;
   owner_id: string;
