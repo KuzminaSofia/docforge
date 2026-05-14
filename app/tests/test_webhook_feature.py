@@ -71,7 +71,7 @@ def test_predict_api_stores_and_returns_callback_url(
             "target_schema": "passport_fields",
             "callback_url": url,
         },
-        files=[("documents", ("doc.pdf", b"%PDF-1.4", "application/pdf"))],
+        files=[("document", ("doc.pdf", b"%PDF-1.4", "application/pdf"))],
         headers=auth_headers,
     )
 
@@ -94,7 +94,7 @@ def test_predict_api_returns_null_callback_url_when_omitted(
             "model_name": api_model.name,
             "target_schema": "passport_fields",
         },
-        files=[("documents", ("doc.pdf", b"%PDF-1.4", "application/pdf"))],
+        files=[("document", ("doc.pdf", b"%PDF-1.4", "application/pdf"))],
         headers=auth_headers,
     )
 

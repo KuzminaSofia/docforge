@@ -54,11 +54,13 @@ def submit_document_prediction(
     user_id: UUID,
     model_name: str,
     target_schema: str,
+    # TODO: рассмотреть батч-режим: принимать list[IncomingDocumentData] и создавать
+    #       отдельную задачу на каждый документ (с единой транзакцией или по-одному)
     documents: list[IncomingDocumentData],
     callback_url: str | None = None,
 ) -> PredictionSubmissionResult:
     """
-    поставить задачу обработки документов в очередь
+    поставить задачу обработки документа в очередь
 
     Сценарий:
     1. загрузить пользователя и модель;

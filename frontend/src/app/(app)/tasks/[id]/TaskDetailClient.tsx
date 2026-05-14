@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { clientFetch, clientFetchText } from "@/lib/api/client";
 import { useTaskSSE } from "@/hooks/useTaskSSE";
 import { formatDateTime } from "@/lib/format";
@@ -36,6 +37,7 @@ interface Props {
 }
 
 export function TaskDetailClient({ taskId, initial }: Props) {
+  const router = useRouter();
   const [data, setData] = useState<TaskResultResponse>(initial);
   const [activeTab, setActiveTab] = useState<Tab>("meta");
   const [markdownContent, setMarkdownContent] = useState<string | null>(null);
@@ -61,6 +63,10 @@ export function TaskDetailClient({ taskId, initial }: Props) {
       clientFetch<TaskResultResponse>(`/tasks/${taskId}/result`)
         .then(setData)
         .catch(() => {});
+      // Обновляем серверные компоненты (layout с балансом в UserMenu).
+      // Баланс списывается воркером в момент завершения задачи —
+      // router.refresh() гарантирует актуальные данные в сайдбаре.
+      router.refresh();
     },
   });
 

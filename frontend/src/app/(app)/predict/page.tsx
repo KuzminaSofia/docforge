@@ -14,7 +14,6 @@ export default async function PredictPage() {
   ]);
 
   const maxFileMb = parseInt(process.env.MAX_FILE_MB ?? "50", 10);
-  const maxTotalMb = parseInt(process.env.MAX_TOTAL_MB ?? "200", 10);
 
   return (
     <div className="flex h-full flex-col">
@@ -32,7 +31,6 @@ export default async function PredictPage() {
         models={models}
         userBalance={user.balance_credits}
         maxFileMb={maxFileMb}
-        maxTotalMb={maxTotalMb}
       />
     </div>
   );

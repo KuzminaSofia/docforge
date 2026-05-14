@@ -36,11 +36,13 @@ def predict_documents(
     current_user: CurrentUserDep,
     model_name: Annotated[str, Form(min_length=1)],
     target_schema: Annotated[str, Form(min_length=1)],
-    documents: Annotated[list[UploadFile], File(...)],
+    # TODO: рассмотреть батч-загрузку (list[UploadFile]) как отдельную фичу,
+    #       когда появится потребность обрабатывать несколько документов за один запрос
+    document: Annotated[UploadFile, File(...)],
     callback_url: Annotated[str | None, Form()] = None,
 ) -> PredictAcceptedResponse:
-    """принять документы и поставить задачу на ML-обработку в очередь"""
-    incoming_documents = collect_uploaded_documents(documents)
+    """принять документ и поставить задачу на ML-обработку в очередь"""
+    incoming_documents = collect_uploaded_documents([document])
 
     submission = submit_document_prediction(
         session,

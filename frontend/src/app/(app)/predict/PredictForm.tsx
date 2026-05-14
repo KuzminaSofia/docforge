@@ -18,16 +18,15 @@ interface PredictFormProps {
   models: MLModelResponse[];
   userBalance: string;
   maxFileMb: number;
-  maxTotalMb: number;
 }
 
-export function PredictForm({ models, userBalance, maxFileMb, maxTotalMb }: PredictFormProps) {
+export function PredictForm({ models, userBalance, maxFileMb }: PredictFormProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [files, setFiles] = useState<File[]>([]);
+  const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [fileErrors, setFileErrors] = useState<string[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   const [modelName, setModelName] = useState(models[0]?.name ?? "");
   const [targetSchema, setTargetSchema] = useState("");
@@ -41,45 +40,27 @@ export function PredictForm({ models, userBalance, maxFileMb, maxTotalMb }: Pred
   const balance = parseFloat(userBalance);
   const hasEnoughBalance = balance >= modelCost;
 
-  // --- Валидация и добавление файлов ---
+  // --- Валидация и выбор файла ---
 
-  const addFiles = useCallback(
-    (incoming: File[]) => {
-      const errors: string[] = [];
-      const valid: File[] = [];
-
-      for (const file of incoming) {
-        if (!ACCEPTED_TYPES[file.type]) {
-          errors.push(`«${file.name}»: формат не поддерживается (разрешены PDF, PNG, JPEG)`);
-          continue;
-        }
-        if (file.size > maxFileMb * 1024 * 1024) {
-          errors.push(`«${file.name}»: превышает ${maxFileMb} МБ`);
-          continue;
-        }
-        if (files.some((f) => f.name === file.name && f.size === file.size)) {
-          continue;
-        }
-        valid.push(file);
-      }
-
-      const newFiles = [...files, ...valid];
-      const totalBytes = newFiles.reduce((s, f) => s + f.size, 0);
-      if (totalBytes > maxTotalMb * 1024 * 1024) {
-        errors.push(`Суммарный размер файлов превышает ${maxTotalMb} МБ`);
-        setFileErrors(errors);
+  const pickFile = useCallback(
+    (incoming: File) => {
+      if (!ACCEPTED_TYPES[incoming.type]) {
+        setFileError(`Формат не поддерживается (разрешены PDF, PNG, JPEG)`);
         return;
       }
-
-      setFileErrors(errors);
-      setFiles(newFiles);
+      if (incoming.size > maxFileMb * 1024 * 1024) {
+        setFileError(`Файл превышает ${maxFileMb} МБ`);
+        return;
+      }
+      setFileError(null);
+      setFile(incoming);
     },
-    [files],
+    [maxFileMb],
   );
 
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-    setFileErrors([]);
+  const removeFile = () => {
+    setFile(null);
+    setFileError(null);
   };
 
   // --- Drag & Drop ---
@@ -98,14 +79,14 @@ export function PredictForm({ models, userBalance, maxFileMb, maxTotalMb }: Pred
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    addFiles(Array.from(e.dataTransfer.files));
+    const dropped = e.dataTransfer.files[0];
+    if (dropped) pickFile(dropped);
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      addFiles(Array.from(e.target.files));
-      e.target.value = ""; // сброс, чтобы можно было добавить те же файлы снова
-    }
+    const selected = e.target.files?.[0];
+    if (selected) pickFile(selected);
+    e.target.value = "";
   };
 
   // --- Отправка ---
@@ -113,8 +94,8 @@ export function PredictForm({ models, userBalance, maxFileMb, maxTotalMb }: Pred
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    if (files.length === 0) {
-      setSubmitError("Добавьте хотя бы один файл.");
+    if (!file) {
+      setSubmitError("Добавьте документ для обработки.");
       return;
     }
     if (!targetSchema.trim()) {
@@ -126,7 +107,7 @@ export function PredictForm({ models, userBalance, maxFileMb, maxTotalMb }: Pred
     setIsSubmitting(true);
 
     const formData = new FormData();
-    files.forEach((file) => formData.append("documents", file));
+    formData.append("document", file);
     formData.append("model_name", modelName);
     formData.append("target_schema", targetSchema.trim());
     if (callbackUrl.trim()) formData.append("callback_url", callbackUrl.trim());
@@ -145,7 +126,7 @@ export function PredictForm({ models, userBalance, maxFileMb, maxTotalMb }: Pred
   }
 
   const canSubmit =
-    files.length > 0 &&
+    file !== null &&
     !!targetSchema.trim() &&
     models.length > 0 &&
     !!selectedModel &&
@@ -157,70 +138,59 @@ export function PredictForm({ models, userBalance, maxFileMb, maxTotalMb }: Pred
       {/* ── Левая панель: загрузка ── */}
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
         {/* Дроп-зона */}
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={cn(
-            "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-10 text-center transition-colors",
-            isDragging
-              ? "border-primary bg-primary/5"
-              : "border-border hover:border-primary/50 hover:bg-muted/30",
-          )}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.png,.jpg,.jpeg"
-            className="sr-only"
-            onChange={handleFileInput}
-          />
-          <span className="text-3xl">⇩</span>
-          <p className="text-sm font-medium text-foreground">
-            Перетащите документы сюда
-          </p>
-          <p className="text-xs text-muted-foreground">
-            или{" "}
-            <span className="text-primary underline">выберите файлы</span>
-          </p>
-        </div>
-
-        {/* Ошибки файлов */}
-        {fileErrors.length > 0 && (
-          <div role="alert" className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            {fileErrors.map((e, i) => (
-              <p key={i}>{e}</p>
-            ))}
+        {file ? (
+          <div className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-foreground">{file.name}</p>
+              <p className="text-xs text-muted-foreground">
+                {ACCEPTED_TYPES[file.type]} · {formatBytes(file.size)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={removeFile}
+              className="ml-3 shrink-0 text-xs text-muted-foreground hover:text-destructive"
+              aria-label={`Удалить ${file.name}`}
+            >
+              ✕
+            </button>
+          </div>
+        ) : (
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={cn(
+              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-10 text-center transition-colors",
+              isDragging
+                ? "border-primary bg-primary/5"
+                : "border-border hover:border-primary/50 hover:bg-muted/30",
+            )}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg"
+              className="sr-only"
+              onChange={handleFileInput}
+            />
+            <span className="text-3xl">⇩</span>
+            <p className="text-sm font-medium text-foreground">
+              Перетащите документ сюда
+            </p>
+            <p className="text-xs text-muted-foreground">
+              или{" "}
+              <span className="text-primary underline">выберите файл</span>
+            </p>
           </div>
         )}
 
-        {/* Список выбранных файлов */}
-        {files.length > 0 && (
-          <ul className="space-y-1.5">
-            {files.map((file, i) => (
-              <li
-                key={i}
-                className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">{file.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {ACCEPTED_TYPES[file.type]} · {formatBytes(file.size)}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeFile(i)}
-                  className="ml-3 shrink-0 text-xs text-muted-foreground hover:text-destructive"
-                  aria-label={`Удалить ${file.name}`}
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-          </ul>
+        {/* Ошибка файла */}
+        {fileError && (
+          <div role="alert" className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {fileError}
+          </div>
         )}
 
         {/* Поддерживаемые форматы */}
@@ -232,7 +202,7 @@ export function PredictForm({ models, userBalance, maxFileMb, maxTotalMb }: Pred
             <dt className="text-muted-foreground">Изображения</dt>
             <dd className="text-foreground">PNG, JPEG</dd>
             <dt className="text-muted-foreground">Максимум</dt>
-            <dd className="text-foreground">{maxFileMb} МБ / файл · {maxTotalMb} МБ итого</dd>
+            <dd className="text-foreground">{maxFileMb} МБ</dd>
             <dt className="text-muted-foreground">Результат</dt>
             <dd className="text-foreground">Markdown, JSON, TXT</dd>
           </dl>
