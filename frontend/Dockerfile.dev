@@ -1,8 +1,4 @@
 FROM node:20-alpine
 WORKDIR /app
-# npm ci запускается при сборке образа (кэшируется Docker)
-# node_modules хранится в именованном volume в docker-compose.dev.yml
-COPY package.json package-lock.json ./
-RUN npm ci
 ENV NEXT_TELEMETRY_DISABLED=1
-CMD ["npm", "run", "dev"]
+CMD sh -c "npm ci && npm run dev"

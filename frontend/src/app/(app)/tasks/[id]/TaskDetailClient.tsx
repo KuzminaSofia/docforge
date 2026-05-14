@@ -130,7 +130,7 @@ export function TaskDetailClient({ taskId, initial }: Props) {
 
       <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Left panel */}
-        <div className="flex flex-1 flex-col overflow-y-auto p-6">
+        <div className="flex flex-1 flex-col overflow-hidden p-6 min-h-0">
           {!isTerminal && <ProgressStepper status={status} />}
           {status === "failed" && <ErrorCard message={data.task.error_message} />}
           {status === "completed" && (
@@ -238,13 +238,13 @@ function MarkdownPanel({
     );
   }
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
-      <div className="border-b border-border bg-muted/40 px-4 py-2">
+    <div className="rounded-xl border border-border bg-card overflow-hidden flex flex-col flex-1 min-h-0">
+      <div className="border-b border-border bg-muted/40 px-4 py-2 shrink-0">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Markdown-превью
         </p>
       </div>
-      <pre className="overflow-x-auto p-4 text-xs text-foreground font-mono whitespace-pre-wrap leading-relaxed">
+      <pre className="overflow-auto p-4 text-xs text-foreground font-mono whitespace-pre-wrap leading-relaxed min-h-0">
         {content}
       </pre>
     </div>
