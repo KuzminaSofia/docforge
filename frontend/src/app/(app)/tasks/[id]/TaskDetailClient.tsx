@@ -128,7 +128,7 @@ export function TaskDetailClient({ taskId, initial }: Props) {
         <TaskStatusBadge status={status} />
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         {/* Left panel */}
         <div className="flex flex-1 flex-col overflow-y-auto p-6">
           {!isTerminal && <ProgressStepper status={status} />}
