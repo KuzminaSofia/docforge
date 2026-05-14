@@ -10,8 +10,8 @@ import type { MLModelResponse, PredictAcceptedResponse } from "@/lib/api/types";
 
 const ACCEPTED_TYPES: Record<string, string> = {
   "application/pdf": "PDF",
-  "image/png": "PNG",
-  "image/jpeg": "JPEG",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "DOCX",
+  "application/msword": "DOC",
 };
 
 interface PredictFormProps {
@@ -45,7 +45,7 @@ export function PredictForm({ models, userBalance, maxFileMb }: PredictFormProps
   const pickFile = useCallback(
     (incoming: File) => {
       if (!ACCEPTED_TYPES[incoming.type]) {
-        setFileError(`Формат не поддерживается (разрешены PDF, PNG, JPEG)`);
+        setFileError(`Формат не поддерживается (разрешены PDF, DOCX, DOC)`);
         return;
       }
       if (incoming.size > maxFileMb * 1024 * 1024) {
@@ -171,7 +171,7 @@ export function PredictForm({ models, userBalance, maxFileMb }: PredictFormProps
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.png,.jpg,.jpeg"
+              accept=".pdf,.docx,.doc"
               className="sr-only"
               onChange={handleFileInput}
             />
@@ -197,10 +197,8 @@ export function PredictForm({ models, userBalance, maxFileMb }: PredictFormProps
         <div className="rounded-lg border border-border bg-muted/30 p-4 text-sm">
           <p className="mb-2 font-medium text-foreground">Поддерживаемые форматы</p>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <dt className="text-muted-foreground">Документы</dt>
-            <dd className="text-foreground">PDF</dd>
-            <dt className="text-muted-foreground">Изображения</dt>
-            <dd className="text-foreground">PNG, JPEG</dd>
+            <dt className="text-muted-foreground">Форматы</dt>
+            <dd className="text-foreground">PDF, DOCX, DOC</dd>
             <dt className="text-muted-foreground">Максимум</dt>
             <dd className="text-foreground">{maxFileMb} МБ</dd>
             <dt className="text-muted-foreground">Результат</dt>
