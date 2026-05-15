@@ -120,9 +120,8 @@ class UploadedDocument(BaseEntity):
     SUPPORTED_MIME_TYPES = frozenset(
         {
             "application/pdf",
-            "image/png",
-            "image/jpeg",
-            "image/jpg",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/msword",
         }
     )
 

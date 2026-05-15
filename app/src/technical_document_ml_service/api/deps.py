@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import Depends, Request
 from fastapi.security import (
@@ -15,7 +16,7 @@ from technical_document_ml_service.core.security import (
     decode_access_token,
     get_auth_cookie_name,
 )
-from technical_document_ml_service.db.session import get_db_session, get_read_session
+from technical_document_ml_service.db.session import SessionLocal, get_db_session, get_read_session
 from technical_document_ml_service.domain.entities import User
 from technical_document_ml_service.domain.exceptions import AuthenticationError
 from technical_document_ml_service.services.auth_service import authenticate_user
@@ -149,3 +150,29 @@ def get_current_read_user(
 
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 CurrentReadUserDep = Annotated[User, Depends(get_current_read_user)]
+
+
+def get_user_id_for_sse(
+    request: Request,
+    basic_credentials: Annotated[HTTPBasicCredentials | None, Depends(http_basic)],
+    bearer_credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Depends(http_bearer),
+    ],
+) -> UUID:
+    """аутентификация для SSE: открывает сессию только для auth, сразу закрывает, возвращает user_id"""
+    session = SessionLocal()
+    try:
+        user = authenticate_request(
+            request=request,
+            session=session,
+            basic_credentials=basic_credentials,
+            bearer_credentials=bearer_credentials,
+        )
+        return user.id
+    finally:
+        session.rollback()
+        session.close()
+
+
+UserIdForSSEDep = Annotated[UUID, Depends(get_user_id_for_sse)]

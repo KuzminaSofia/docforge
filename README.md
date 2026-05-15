@@ -4,7 +4,7 @@
 
 **Сервис извлечения и проверки данных из технической документации**
 
-Пользователь загружает PDF-документы через Web-интерфейс или REST API, сервис ставит задачу на асинхронную обработку, отдельный worker выполняет ML/inference-пайплайн, сохраняет результат, артефакты обработки и историю операций
+Пользователь загружает технические документы (PDF, DOCX, DOC) через Web-интерфейс или REST API, сервис ставит задачу на асинхронную обработку, отдельный worker выполняет ML/inference-пайплайн, сохраняет результат, артефакты обработки и историю операций
 
 Проект реализован как полноценный backend-сервис с Web UI, REST API, PostgreSQL, RabbitMQ, worker-процессами, reverse proxy и набором автоматизированных тестов
 
@@ -21,6 +21,7 @@
 - постановка ML-задачи в очередь;
 - асинхронная обработка задачи отдельными worker-процессами;
 - просмотр списка задач и их статусов;
+- отслеживание прогресса обработки задачи в реальном времени через SSE;
 - просмотр результата обработки задачи;
 - просмотр артефактов обработки документов;
 - просмотр истории ML-запросов;
@@ -35,7 +36,7 @@
 Основной пользовательский сценарий выглядит так:
 1. Пользователь регистрируется или входит в систему
 2. Пользователь пополняет баланс
-3. Пользователь загружает один или несколько технических документов
+3. Пользователь загружает технический документ (PDF, DOCX или DOC)
 4. API сохраняет документы в файловое хранилище
 5. API создает ML-задачу в базе данных
 6. API публикует сообщение о задаче в RabbitMQ
@@ -48,52 +49,50 @@
 
 ## Архитектура
 
-Проект построен по сервисной архитектуре и запускается через Docker Compose
+Проект построен по сервисной архитектуре и запускается через Docker Compose.
 Основные компоненты:
-- **app** — основное FastAPI-приложение;
-- **web-proxy** — Nginx reverse proxy;
-- **database** — PostgreSQL для хранения пользователей, задач, результатов, истории и транзакций;
+- **frontend** — Next.js 15 Web UI (React Server Components + клиентские компоненты);
+- **app** — FastAPI REST API;
+- **web-proxy** — Nginx: `/api/*` → FastAPI, `/` → Next.js;
+- **database** — PostgreSQL;
 - **rabbitmq** — брокер сообщений для асинхронной обработки ML-задач;
-- **worker-1 / worker-2** — отдельные consumer-процессы, которые обрабатывают задачи из очереди
+- **worker-1 / worker-2** — отдельные consumer-процессы
 
 Схема взаимодействия:
 
 ```text
-User / Browser / API Client
-        |
-        v
-     Nginx
-        |
-        v
- FastAPI app  --->  PostgreSQL
-        |
-        v
-     RabbitMQ
-        |
-        v
- ML Workers  --->  PostgreSQL
-        |
-        v
- storage/artifacts
+Browser
+   |
+   v
+ Nginx
+   |
+   +---> /           --> Next.js frontend (SSR + HMR)
+   |
+   +---> /api/*      --> FastAPI app --> PostgreSQL
+                                     --> RabbitMQ
+                                           |
+                                           v
+                                      ML Workers --> PostgreSQL
+                                                 --> storage/artifacts
 ```
 
 ---
 
 ## Технологический стек
 
-- Python 3.11;
-- FastAPI;
-- Jinja2 templates;
-- SQLAlchemy;
-- PostgreSQL;
-- RabbitMQ;
-- Docker / Docker Compose;
-- Nginx;
-- Pydantic;
-- Pytest;
-- Docling для обработки технических документов;
-- JWT cookie auth для Web UI;
-- Basic Auth / Bearer Auth для API
+**Backend:**
+- Python 3.11, FastAPI, SQLAlchemy, Pydantic, Pytest
+- PostgreSQL, RabbitMQ
+- Docling для обработки технических документов
+- JWT cookie auth (Web UI), Basic Auth / Bearer Auth (API)
+
+**Frontend:**
+- Next.js 15 (App Router, React Server Components), React 19, TypeScript
+- Tailwind CSS, shadcn/ui design tokens
+- Jest + React Testing Library
+
+**Инфраструктура:**
+- Docker / Docker Compose, Nginx
 
 ---
 
@@ -101,6 +100,16 @@ User / Browser / API Client
 
 ```text
 technical-document-ml-service/
+├── frontend/                         # Next.js 15 Web UI
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── (public)/             # страницы без авторизации: login, register
+│   │   │   └── (app)/                # защищённые страницы: dashboard, predict, tasks, history, balance
+│   │   ├── components/               # Sidebar, UserMenu, TaskStatusBadge, Skeleton
+│   │   └── lib/                      # api fetchers, типы, утилиты, auth helpers
+│   ├── Dockerfile                    # production multi-stage build
+│   ├── Dockerfile.dev                # dev mode (next dev + volume mount)
+│   └── src/__tests__/               # Jest + RTL тесты
 ├── app/
 │   ├── Dockerfile
 │   ├── requirements.txt
@@ -113,9 +122,9 @@ technical-document-ml-service/
 │   │       ├── inference/    # backend-обработка документов
 │   │       ├── messaging/    # RabbitMQ-контракты и подключение к брокеру
 │   │       ├── services/     # прикладные сервисы и use cases
-│   │       ├── web/          # Web UI, HTML-шаблоны, формы, static-файлы
+│   │       ├── web/          # legacy Jinja2 Web UI (устарел, заменён Next.js)
 │   │       └── workers/      # код worker-процессов
-│   └── tests/                # unit, API, WebUI и системные тесты
+│   └── tests/                # unit, API и системные тесты
 ├── worker/
 │   ├── Dockerfile
 │   └── requirements.txt
@@ -127,6 +136,7 @@ technical-document-ml-service/
 │   ├── rabbitmq/             # данные RabbitMQ
 │   └── uploads/              # загруженные пользователем документы
 ├── docker-compose.yml
+├── docker-compose.dev.yml    # override для frontend hot-reload
 ├── pyproject.toml
 ├── README.md
 └── .gitignore
@@ -157,8 +167,14 @@ app/.env
 
 ### 3. Собрать и запустить сервисы
 
+**Production-режим** (финальная сборка, занимает несколько минут при первом запуске):
 ```bash
 docker compose up -d --build
+```
+
+**Dev-режим** (hot-reload для фронтенда — изменения `.tsx` применяются без пересборки):
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 ```
 
 ### 4. Проверить состояние контейнеров
@@ -167,7 +183,8 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Ожидается, что будут запущены основные сервисы:
+Ожидается, что будут запущены:
+- `technical-document-frontend`;
 - `technical-document-app`;
 - `technical-document-web-proxy`;
 - `technical-document-database`;
@@ -178,7 +195,7 @@ docker compose ps
 ### 5. Проверить healthcheck приложения
 
 ```bash
-curl http://localhost/health
+curl https://localhost/health --insecure
 ```
 
 Ожидаемый ответ:
@@ -194,10 +211,10 @@ curl http://localhost/health
 
 | Интерфейс | URL | Назначение |
 |---|---|---|
-| Web UI | `http://localhost/` | Личный кабинет пользователя |
-| Swagger UI | `http://localhost/docs` | Документация и ручная проверка REST API |
+| Web UI (Next.js) | `https://localhost/` | Личный кабинет пользователя |
+| Swagger UI | `https://localhost/docs` | Документация и ручная проверка REST API |
 | RabbitMQ UI | `http://localhost:15672` | Просмотр очередей и сообщений RabbitMQ |
-| Healthcheck | `http://localhost/health` | Проверка работоспособности приложения |
+| Healthcheck | `https://localhost/health` | Проверка работоспособности приложения |
 
 Доступ к RabbitMQ UI по умолчанию:
 
@@ -211,7 +228,10 @@ password: guest
 ## Web UI
 
 Web-интерфейс доступен по адресу:
-`http://localhost/`
+`https://localhost/`
+
+Nginx работает на HTTPS с самоподписным сертификатом (генерируется автоматически при первом запуске).
+При первом открытии браузер покажет предупреждение — нужно нажать «Дополнительно» → «Перейти на localhost».
 
 Для браузерного интерфейса используется JWT-аутентификация через `HttpOnly cookie`
 
@@ -220,7 +240,7 @@ Web-интерфейс доступен по адресу:
 ## REST API
 
 REST API доступен через Swagger UI:
-`http://localhost/docs`
+`https://localhost/docs`
 
 Основные группы эндпоинтов:
 - `/auth/register` — регистрация пользователя;
@@ -232,6 +252,8 @@ REST API доступен через Swagger UI:
 - `/tasks` — список задач пользователя;
 - `/tasks/{task_id}` — детальная информация по задаче;
 - `/tasks/{task_id}/result` — результат обработки и список артефактов;
+- `/tasks/{task_id}/stream` — SSE-поток событий об изменении статуса задачи (используется Web UI);
+- `/tasks/{task_id}/artifacts/{name}` — скачивание файла артефакта;
 - `/history/transactions` — история транзакций;
 - `/history/predictions` — история ML-запросов;
 - `/health` — проверка работоспособности приложения
@@ -255,10 +277,11 @@ Worker:
 - получает сообщение из RabbitMQ;
 - блокирует задачу на уровне БД;
 - проверяет, что задача еще не была обработана;
-- переводит задачу в статус `processing`;
+- переводит задачу в статус `validating` и сохраняет в БД;
+- проверяет входные документы;
+- переводит задачу в статус `processing` и сохраняет в БД;
 - выполняет inference-пайплайн;
-- сохраняет результат;
-- сохраняет артефакты обработки;
+- сохраняет результат и артефакты обработки;
 - списывает стоимость обработки с баланса пользователя;
 - создает записи истории;
 - переводит задачу в статус `completed` или `failed`
@@ -334,29 +357,26 @@ GET /tasks/{task_id}/result
 
 ## Тестирование
 
-Тесты запускаются внутри контейнера `app`:
+**Backend-тесты** (pytest, запускаются внутри контейнера `app`):
 
 ```bash
 docker compose run --rm app pytest -q
 ```
 
-Ожидаемый результат на текущем этапе:
+Ожидаемый результат: `56 passed`
 
-```text
-63 passed
+Тестовый контур включает: доменные операции, пользователей, баланс, историю, REST API, inference-слой, processing-сервис, системные сценарные тесты полного пользовательского пути.
+
+**Frontend-тесты** (Jest + React Testing Library):
+
+```bash
+docker run --rm -v $(pwd)/frontend:/app -w /app node:20-alpine \
+  sh -c "node_modules/.bin/jest"
 ```
 
-Тестовый контур включает:
+Ожидаемый результат: `28 passed`
 
-- тесты доменных и сервисных операций;
-- тесты работы с пользователями;
-- тесты баланса и транзакций;
-- тесты истории запросов;
-- тесты REST API;
-- тесты Web UI;
-- тесты inference-слоя;
-- тесты processing-сервиса;
-- системные сценарные тесты полного пользовательского пути
+Покрыты: утилиты форматирования дат, функция `cn()`, классы API-ошибок, компонент `TaskStatusBadge`.
 
 ---
 
@@ -371,13 +391,15 @@ docker compose up -d --build
 ```
 
 2. Открыть Web UI:
-`http://localhost/`
+`https://localhost/`
+
+   При первом открытии браузер покажет предупреждение о самоподписном сертификате — нажать «Дополнительно» → «Перейти на localhost»
 
 3. Зарегистрировать нового пользователя
 4. Войти в личный кабинет
 5. Открыть страницу баланса и пополнить баланс
 6. Открыть страницу создания ML-задачи
-7. Загрузить PDF-документ
+7. Загрузить документ (PDF, DOCX или DOC)
 8. Отправить задачу на обработку
 9. Открыть список задач
 10. Дождаться перехода задачи в статус `completed`
@@ -388,5 +410,5 @@ docker compose up -d --build
     - транзакция списания средств
 
 Дополнительно можно открыть RabbitMQ UI и убедиться, что задачи проходят через очередь:
-`http://localhost:15672`
+`http://localhost:15672` (RabbitMQ UI работает на HTTP — без HTTPS)
 

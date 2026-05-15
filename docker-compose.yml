@@ -61,23 +61,36 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  frontend:
+    build:
+      context: ./frontend
+    container_name: technical-document-frontend
+    environment:
+      INTERNAL_API_URL: http://app:8000
+    depends_on:
+      - app
+
   web-proxy:
     build:
       context: ./web-proxy
     container_name: technical-document-web-proxy
     depends_on:
       - app
+      - frontend
     ports:
       - "80:80"
       - "443:443"
+    volumes:
+      - tls_certs:/etc/nginx/certs
 
   rabbitmq:
     image: rabbitmq:3-management
     container_name: technical-document-rabbitmq
     restart: on-failure
+    expose:
+      - "5672"
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "127.0.0.1:15672:15672"
     volumes:
       - ./storage/rabbitmq:/var/lib/rabbitmq
     healthcheck:
@@ -105,3 +118,4 @@ services:
 
 volumes:
   postgres_data:
+  tls_certs:

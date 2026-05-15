@@ -7,6 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from technical_document_ml_service.domain.enums import DocumentType, UserRole
+from technical_document_ml_service.inference.registry import (
+    DOCLING_BACKEND_NAME,
+    TECHNICAL_DOCUMENT_MODEL_KIND,
+)
 
 from technical_document_ml_service.db.base import Base
 from technical_document_ml_service.db.models import MLModelORM, UserORM
@@ -102,9 +106,9 @@ def seed_initial_data(session: Session) -> None:
         name="technical-document-extractor-basic",
         description="Базовая модель извлечения данных из технических документов",
         prediction_cost=Decimal("10.00"),
-        model_kind="technical_document_extraction",
+        model_kind=TECHNICAL_DOCUMENT_MODEL_KIND,
         supported_document_types=[DocumentType.UNKNOWN.value],
-        backend_name="docling",
+        backend_name=DOCLING_BACKEND_NAME,
         backend_config={},
     )
     _ensure_model(
@@ -112,9 +116,9 @@ def seed_initial_data(session: Session) -> None:
         name="technical-document-extractor-advanced",
         description="Расширенная модель извлечения и структурирования данных",
         prediction_cost=Decimal("25.00"),
-        model_kind="technical_document_extraction",
+        model_kind=TECHNICAL_DOCUMENT_MODEL_KIND,
         supported_document_types=[DocumentType.UNKNOWN.value],
-        backend_name="docling",
+        backend_name=DOCLING_BACKEND_NAME,
         backend_config={},
     )
 

@@ -17,3 +17,9 @@ dist/
 
 storage/rabbitmq/*
 storage/
+
+# Environment files with real secrets — use app/.env.example as template
+app/.env
+.env
+.env.local
+.env.*.local

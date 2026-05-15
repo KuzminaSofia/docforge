@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -8,6 +9,17 @@ from pydantic import BaseModel
 
 from technical_document_ml_service.domain.enums import TaskStatus
 from technical_document_ml_service.services.dto import ValidationIssueItem
+
+
+class MLModelResponse(BaseModel):
+    """активная ML-модель, доступная для обработки документов"""
+
+    id: str
+    name: str
+    description: str
+    prediction_cost: Decimal
+    backend_name: str
+    model_kind: str
 
 
 class ValidationIssueResponse(BaseModel):

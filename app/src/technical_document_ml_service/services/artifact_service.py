@@ -1,12 +1,41 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from technical_document_ml_service.domain.exceptions import NotFoundError
+
+if TYPE_CHECKING:
+    from technical_document_ml_service.services.dto import TaskResultBundle
 
 logger = logging.getLogger(__name__)
 
 MAX_MARKDOWN_PREVIEW_CHARS = 200_000
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactFileDescriptor:
+    file_path: Path
+    mime_type: str | None
+
+
+def get_task_artifact_file_path(
+    bundle: "TaskResultBundle",
+    artifact_name: str,
+) -> ArtifactFileDescriptor:
+    """найти артефакт задачи по имени и вернуть его путь (защита от path traversal встроена)"""
+    artifact = next((a for a in bundle.artifacts if a.name == artifact_name), None)
+    if artifact is None:
+        raise NotFoundError(f"Артефакт '{artifact_name}' не найден.")
+
+    artifacts_dir = bundle.result.artifacts_dir if bundle.result else None
+    file_path = resolve_artifact_path({"path": artifact.path}, artifacts_dir=artifacts_dir)
+    if file_path is None:
+        raise NotFoundError(f"Файл артефакта '{artifact_name}' недоступен.")
+
+    return ArtifactFileDescriptor(file_path=file_path, mime_type=artifact.mime_type)
 
 
 def looks_like_markdown_artifact(artifact: dict[str, Any]) -> bool:

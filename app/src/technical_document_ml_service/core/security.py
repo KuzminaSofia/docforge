@@ -23,7 +23,17 @@ PASSWORD_PBKDF2_ITERATIONS_ENV = "APP_PASSWORD_PBKDF2_ITERATIONS"
 PASSWORD_SALT_BYTES_ENV = "APP_PASSWORD_SALT_BYTES"
 
 PASSWORD_SCHEME_PBKDF2_SHA256 = "pbkdf2_sha256"
-_RESERVED_JWT_CLAIMS = {"sub", "user_id", "iat", "exp"}
+_RESERVED_JWT_CLAIMS = {"sub", "user_id", "iat", "exp", "iss", "aud"}
+JWT_ISSUER = "technical-document-ml-service"
+JWT_AUDIENCE = "technical-document-ml-service"
+_MIN_JWT_SECRET_LEN = 32
+_KNOWN_WEAK_SECRETS = frozenset({
+    "change-me-in-production",
+    "super-secret-key-change-me",
+    "secret",
+    "password",
+    "jwt-secret",
+})
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -139,9 +149,20 @@ def verify_password(raw_password: str, password_hash: str) -> bool:
 
 def get_jwt_secret_key() -> str:
     """получить секрет для подписи JWT-токенов"""
-    secret = os.getenv(JWT_SECRET_ENV, "change-me-in-production")
+    secret = os.getenv(JWT_SECRET_ENV, "")
     if not secret:
-        raise RuntimeError("JWT secret key не задан.")
+        raise RuntimeError(
+            f"Необходимо задать переменную окружения {JWT_SECRET_ENV}."
+        )
+    if secret in _KNOWN_WEAK_SECRETS:
+        raise RuntimeError(
+            f"{JWT_SECRET_ENV} содержит небезопасное значение по умолчанию. "
+            "Задайте случайный секрет длиной не менее 32 символов."
+        )
+    if len(secret) < _MIN_JWT_SECRET_LEN:
+        raise RuntimeError(
+            f"{JWT_SECRET_ENV} должен быть длиной не менее {_MIN_JWT_SECRET_LEN} символов."
+        )
     return secret
 
 
@@ -214,6 +235,8 @@ def create_access_token(
 
     payload.update(
         {
+            "iss": JWT_ISSUER,
+            "aud": JWT_AUDIENCE,
             "sub": email,
             "user_id": str(user_id),
             "iat": now,
@@ -276,6 +299,12 @@ def decode_access_token(token: str) -> dict[str, Any]:
 
     if header.get("alg") != "HS256":
         raise AuthenticationError("Неподдерживаемый алгоритм токена.")
+
+    if payload.get("iss") != JWT_ISSUER:
+        raise AuthenticationError("Некорректный издатель токена.")
+
+    if payload.get("aud") != JWT_AUDIENCE:
+        raise AuthenticationError("Некорректная аудитория токена.")
 
     signing_input = f"{encoded_header}.{encoded_payload}".encode("ascii")
     expected_signature = hmac.new(

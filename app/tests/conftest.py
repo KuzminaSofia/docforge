@@ -268,13 +268,3 @@ def publish_task_spy(monkeypatch):
     )
 
     return published_messages
-
-@pytest.fixture
-def same_origin_headers() -> dict[str, str]:
-    """
-    заголовки для прохождения same-origin проверки в WebUI POST-формах
-    """
-    return {
-        "Origin": "http://testserver",
-        "Referer": "http://testserver/",
-    }

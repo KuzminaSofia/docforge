@@ -38,7 +38,7 @@ from technical_document_ml_service.services.prediction_processing_service import
 def _pdf_files() -> list[tuple[str, tuple[str, bytes, str]]]:
     return [
         (
-            "documents",
+            "document",
             ("sample.pdf", b"%PDF-1.4 test content", "application/pdf"),
         )
     ]

@@ -1,0 +1,4 @@
+FROM node:20-alpine
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+CMD sh -c "npm ci && npm run dev"

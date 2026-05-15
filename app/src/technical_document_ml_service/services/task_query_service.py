@@ -204,6 +204,44 @@ def get_user_task_details(
     return _build_task_details_item(task)
 
 
+def get_user_task_status(
+    session: Session,
+    *,
+    user_id: UUID,
+    task_id: UUID,
+) -> TaskDetailsItem:
+    """получить только основные поля задачи без тяжелых связей — для поллинга статуса"""
+    statement = (
+        select(MLTaskORM)
+        .where(MLTaskORM.id == task_id)
+        .options(
+            selectinload(MLTaskORM.model),
+        )
+    )
+    task = session.execute(statement).scalar_one_or_none()
+    if task is None:
+        raise NotFoundError("ML-задача не найдена.")
+
+    _ensure_task_owner(task=task, user_id=user_id)
+
+    return TaskDetailsItem(
+        id=task.id,
+        user_id=task.user_id,
+        model_id=task.model_id,
+        model_name=task.model.name,
+        backend_name=task.model.backend_name,
+        target_schema=task.target_schema,
+        status=TaskStatus(task.status),
+        error_message=task.error_message,
+        spent_credits=task.spent_credits,
+        created_at=task.created_at,
+        started_at=task.started_at,
+        completed_at=task.completed_at,
+        result_id=None,
+        documents=[],
+    )
+
+
 def get_user_task_result(
     session: Session,
     *,

@@ -36,7 +36,7 @@ def test_predictions_history_contains_successful_prediction_after_processing(
     publish_task_spy,
 ) -> None:
     files = [
-        ("documents", ("sample.pdf", b"%PDF-1.4 test content", "application/pdf")),
+        ("document", ("sample.pdf", b"%PDF-1.4 test content", "application/pdf")),
     ]
     data = {
         "model_name": api_model.name,

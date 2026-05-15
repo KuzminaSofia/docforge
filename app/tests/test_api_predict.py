@@ -22,7 +22,7 @@ def test_predict_accepts_task_and_enqueues_message(
     publish_task_spy,
 ) -> None:
     files = [
-        ("documents", ("sample.pdf", b"%PDF-1.4 test content", "application/pdf")),
+        ("document", ("sample.pdf", b"%PDF-1.4 test content", "application/pdf")),
     ]
     data = {
         "model_name": api_model.name,
@@ -87,7 +87,7 @@ def test_predict_with_insufficient_balance_returns_409_and_does_not_publish(
     publish_task_spy,
 ) -> None:
     files = [
-        ("documents", ("sample.pdf", b"%PDF-1.4 test content", "application/pdf")),
+        ("document", ("sample.pdf", b"%PDF-1.4 test content", "application/pdf")),
     ]
     data = {
         "model_name": api_model.name,
@@ -119,7 +119,7 @@ def test_predict_with_missing_model_returns_404_and_does_not_publish(
     publish_task_spy,
 ) -> None:
     files = [
-        ("documents", ("sample.pdf", b"%PDF-1.4 test content", "application/pdf")),
+        ("document", ("sample.pdf", b"%PDF-1.4 test content", "application/pdf")),
     ]
     data = {
         "model_name": "missing-model",

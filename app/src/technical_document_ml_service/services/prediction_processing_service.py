@@ -16,8 +16,6 @@ from technical_document_ml_service.domain.entities import (
 )
 from technical_document_ml_service.domain.enums import TaskStatus
 from technical_document_ml_service.domain.exceptions import (
-    InsufficientBalanceError,
-    ModelUnavailableError,
     NotFoundError,
     TaskExecutionError,
 )
@@ -38,6 +36,7 @@ from technical_document_ml_service.services.mappers import (
     task_orm_to_domain,
 )
 from technical_document_ml_service.services.prediction_persistence import (
+    ensure_prediction_can_start,
     persist_prediction_result,
 )
 from technical_document_ml_service.services.webhook_service import send_task_webhook
@@ -99,6 +98,17 @@ def _build_skipped_result(
     )
 
 
+def _persist_status_transition(
+    session: Session,
+    *,
+    task_orm: MLTaskORM,
+    domain_task: DocumentExtractionTask,
+) -> None:
+    """зафиксировать промежуточный статус задачи в БД без сохранения финального результата"""
+    sync_task_orm_from_domain(task_orm, domain_task)
+    session.commit()
+
+
 def _mark_task_as_failed(
     session: Session,
     *,
@@ -116,6 +126,14 @@ def _mark_task_as_failed(
     session.commit()
 
 
+_SKIP_STATUS_MESSAGES: dict[TaskStatus, str] = {
+    TaskStatus.COMPLETED: "Задача уже была успешно обработана ранее.",
+    TaskStatus.PROCESSING: "Задача уже находится в обработке.",
+    TaskStatus.VALIDATING: "Задача уже находится на этапе валидации.",
+    TaskStatus.FAILED: "Задача ранее завершилась с ошибкой.",
+}
+
+
 def _ensure_processing_can_start(
     *,
     domain_task: DocumentExtractionTask,
@@ -129,11 +147,142 @@ def _ensure_processing_can_start(
     if domain_model.id != domain_task.model_id:
         raise TaskExecutionError("Задача не соответствует переданной модели.")
 
-    if not domain_model.is_active:
-        raise ModelUnavailableError("Выбранная ML-модель недоступна.")
+    ensure_prediction_can_start(user=domain_user, model=domain_model)
 
-    if not domain_user.can_afford(domain_model.prediction_cost):
-        raise InsufficientBalanceError("Недостаточно средств для выполнения задачи.")
+
+def _run_ml_backend(
+    *,
+    domain_task: DocumentExtractionTask,
+    domain_model,
+    model_backend_name: str,
+    model_backend_config: dict,
+    model_kind: str,
+):
+    """выбрать backend и запустить ML-обработку"""
+    backend_request = build_backend_request(
+        task=domain_task,
+        model_id=domain_model.id,
+        model_name=domain_model.name,
+        model_kind=model_kind,
+        backend_name=model_backend_name,
+        backend_config=model_backend_config,
+    )
+    backend_selection = select_prediction_backend(
+        requested_backend_name=model_backend_name,
+        backend_config=model_backend_config,
+    )
+
+    backend_result = backend_selection.backend.process(backend_request)
+
+    for warning in backend_result.warnings:
+        LOGGER.warning(
+            "task_id=%s | backend=%s | warning=%s",
+            domain_task.id,
+            backend_selection.resolved_backend_name,
+            warning,
+        )
+
+    return backend_selection, backend_request, backend_result
+
+
+def _persist_completion(
+    session: Session,
+    *,
+    task_orm: MLTaskORM,
+    domain_task: DocumentExtractionTask,
+    domain_user,
+    result,
+    debit_transaction,
+) -> None:
+    """сохранить результат, транзакцию и запись истории, зафиксировать транзакцию"""
+    sync_user_orm_from_domain(task_orm.user, domain_user)
+    sync_task_orm_from_domain(task_orm, domain_task)
+
+    persist_prediction_result(session, task_id=domain_task.id, result=result)
+    record_transaction(session, transaction=debit_transaction)
+    create_history_record_from_task(session, domain_task)
+
+    session.commit()
+
+
+def _execute_prediction(
+    session: Session,
+    *,
+    task_orm: MLTaskORM,
+    domain_task: DocumentExtractionTask,
+    domain_user,
+    domain_model,
+    model_backend_name: str,
+    model_backend_config: dict,
+    model_kind: str,
+) -> PredictionProcessingResult:
+    """фаза ML-обработки: валидация -> backend -> сохранение результата"""
+    _ensure_processing_can_start(
+        domain_task=domain_task,
+        domain_user=domain_user,
+        domain_model=domain_model,
+    )
+
+    domain_task.mark_as_validating()
+    _persist_status_transition(session, task_orm=task_orm, domain_task=domain_task)
+
+    validation_issues = domain_task.validate_input()
+
+    if not domain_task.get_valid_documents():
+        raise TaskExecutionError("Нет валидных документов для обработки.")
+
+    domain_task.mark_as_processing()
+    _persist_status_transition(session, task_orm=task_orm, domain_task=domain_task)
+
+    backend_selection, backend_request, backend_result = _run_ml_backend(
+        domain_task=domain_task,
+        domain_model=domain_model,
+        model_backend_name=model_backend_name,
+        model_backend_config=model_backend_config,
+        model_kind=model_kind,
+    )
+
+    result = build_prediction_result_from_backend_result(
+        task_id=domain_task.id,
+        backend_result=backend_result,
+        artifacts_dir=backend_request.artifacts_dir,
+    )
+    result.add_issues(validation_issues)
+
+    debit_transaction = DebitTransaction(
+        user_id=domain_user.id,
+        amount=domain_model.prediction_cost,
+        task_id=domain_task.id,
+    )
+    debit_transaction.apply(domain_user)
+
+    domain_task.mark_as_completed(
+        result_id=result.id,
+        spent_credits=domain_model.prediction_cost,
+    )
+
+    _persist_completion(
+        session,
+        task_orm=task_orm,
+        domain_task=domain_task,
+        domain_user=domain_user,
+        result=result,
+        debit_transaction=debit_transaction,
+    )
+
+    return PredictionProcessingResult(
+        task_id=domain_task.id,
+        status=domain_task.status,
+        result_id=domain_task.result_id,
+        created_at=domain_task.created_at,
+        completed_at=domain_task.finished_at,
+        spent_credits=domain_task.spent_credits,
+        was_processed=True,
+        message=(
+            f"Задача успешно обработана через backend "
+            f"'{backend_selection.resolved_backend_name}'."
+        ),
+    )
 
 
 def process_document_prediction_task(
@@ -141,17 +290,7 @@ def process_document_prediction_task(
     *,
     task_id: UUID,
 ) -> PredictionProcessingResult:
-    """
-    обработать ранее поставленную в очередь задачу
-
-    Сценарий:
-    1. загрузить задачу и связанные данные;
-    2. проверить, нужно ли ее реально обрабатывать;
-    3. восстановить доменные объекты;
-    4. провалидировать входные данные и выбрать backend;
-    5. выполнить backend;
-    6. сохранить результат, транзакцию и историю.
-    """
+    """обработать ранее поставленную в очередь задачу"""
     task_orm = _load_task_for_processing(session, task_id)
     if task_orm is None:
         raise NotFoundError(f"Задача с id={task_id} не найдена.")
@@ -165,37 +304,13 @@ def process_document_prediction_task(
 
     current_status = TaskStatus(task_orm.status)
 
-    if current_status == TaskStatus.COMPLETED:
-        return _build_skipped_result(
-            task_orm,
-            message="Задача уже была успешно обработана ранее.",
-        )
-
-    if current_status == TaskStatus.PROCESSING:
-        return _build_skipped_result(
-            task_orm,
-            message="Задача уже находится в обработке.",
-        )
-
-    if current_status == TaskStatus.VALIDATING:
-        return _build_skipped_result(
-            task_orm,
-            message="Задача уже находится на этапе валидации.",
-        )
-
-    if current_status == TaskStatus.FAILED:
-        return _build_skipped_result(
-            task_orm,
-            message="Задача ранее завершилась с ошибкой.",
-        )
+    if current_status in _SKIP_STATUS_MESSAGES:
+        return _build_skipped_result(task_orm, message=_SKIP_STATUS_MESSAGES[current_status])
 
     if current_status != TaskStatus.QUEUED:
         return _build_skipped_result(
             task_orm,
-            message=(
-                f"Задача в статусе {current_status.value} "
-                "не может быть обработана воркером."
-            ),
+            message=f"Задача в статусе {current_status.value} не может быть обработана воркером.",
         )
 
     domain_user = orm_to_domain_user(task_orm.user)
@@ -203,115 +318,37 @@ def process_document_prediction_task(
     domain_task = task_orm_to_domain(task_orm)
 
     try:
-        _ensure_processing_can_start(
+        processing_result = _execute_prediction(
+            session,
+            task_orm=task_orm,
             domain_task=domain_task,
             domain_user=domain_user,
             domain_model=domain_model,
-        )
-
-        domain_task.mark_as_validating()
-        validation_issues = domain_task.validate_input()
-
-        if not domain_task.get_valid_documents():
-            raise TaskExecutionError("Нет валидных документов для обработки.")
-
-        backend_request = build_backend_request(
-            task=domain_task,
-            model_id=domain_model.id,
-            model_name=domain_model.name,
+            model_backend_name=model_backend_name,
+            model_backend_config=model_backend_config,
             model_kind=model_kind,
-            backend_name=model_backend_name,
-            backend_config=model_backend_config,
         )
-
-        backend_selection = select_prediction_backend(
-            requested_backend_name=model_backend_name,
-            backend_config=model_backend_config,
-        )
-
-        domain_task.mark_as_processing()
-
-        backend_result = backend_selection.backend.process(backend_request)
-
-        for warning in backend_result.warnings:
-            LOGGER.warning(
-                "task_id=%s | backend=%s | warning=%s",
-                domain_task.id,
-                backend_selection.resolved_backend_name,
-                warning,
-            )
-
-        result = build_prediction_result_from_backend_result(
-            task_id=domain_task.id,
-            backend_result=backend_result,
-            artifacts_dir=backend_request.artifacts_dir,
-        )
-        result.add_issues(validation_issues)
-
-        debit_transaction = DebitTransaction(
-            user_id=domain_user.id,
-            amount=domain_model.prediction_cost,
-            task_id=domain_task.id,
-        )
-        debit_transaction.apply(domain_user)
-
-        domain_task.mark_as_completed(
-            result_id=result.id,
-            spent_credits=domain_model.prediction_cost,
-        )
-
-        sync_user_orm_from_domain(task_orm.user, domain_user)
-        sync_task_orm_from_domain(task_orm, domain_task)
-
-        persist_prediction_result(
-            session,
-            task_id=domain_task.id,
-            result=result,
-        )
-        record_transaction(
-            session,
-            transaction=debit_transaction,
-        )
-        create_history_record_from_task(session, domain_task)
-
-        session.commit()
 
         if callback_url:
             send_task_webhook(
                 url=callback_url,
-                task_id=domain_task.id,
-                status=domain_task.status,
+                task_id=processing_result.task_id,
+                status=processing_result.status,
                 model_name=model_name_for_webhook,
-                result_id=domain_task.result_id,
-                spent_credits=domain_task.spent_credits,
-                completed_at=domain_task.finished_at,
+                result_id=processing_result.result_id,
+                spent_credits=processing_result.spent_credits,
+                completed_at=processing_result.completed_at,
                 error_message=None,
             )
 
-        return PredictionProcessingResult(
-            task_id=domain_task.id,
-            status=domain_task.status,
-            result_id=domain_task.result_id,
-            created_at=domain_task.created_at,
-            completed_at=domain_task.finished_at,
-            spent_credits=domain_task.spent_credits,
-            was_processed=True,
-            message=(
-                f"Задача успешно обработана через backend "
-                f"'{backend_selection.resolved_backend_name}'."
-            ),
-        )
+        return processing_result
 
     except Exception as exc:
         if session.in_transaction():
             session.rollback()
 
         error_text = str(exc)
-        _mark_task_as_failed(
-            session,
-            task_id=task_id,
-            error_message=error_text,
-        )
+        _mark_task_as_failed(session, task_id=task_id, error_message=error_text)
 
         if callback_url:
             send_task_webhook(

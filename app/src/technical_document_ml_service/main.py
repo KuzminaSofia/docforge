@@ -3,7 +3,6 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from technical_document_ml_service.api.errors import register_exception_handlers
 from technical_document_ml_service.api.routers import (
@@ -16,11 +15,6 @@ from technical_document_ml_service.api.routers import (
     users_router,
 )
 from technical_document_ml_service.db.init_db import init_db
-from technical_document_ml_service.web.routers import (
-    web_actions_router,
-    web_pages_router,
-)
-from technical_document_ml_service.web.templating import STATIC_DIR
 
 
 @asynccontextmanager
@@ -35,11 +29,6 @@ app = FastAPI(
 )
 
 register_exception_handlers(app)
-
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-app.include_router(web_pages_router)
-app.include_router(web_actions_router)
 
 app.include_router(health_router)
 app.include_router(auth_router)
