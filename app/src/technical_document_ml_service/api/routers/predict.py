@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, Form, UploadFile, status
 
-from technical_document_ml_service.api.deps import CurrentReadUserDep, CurrentUserDep, ReadSessionDep, SessionDep
+from technical_document_ml_service.api.deps import CurrentReadUserDep, PlainSessionDep, ReadSessionDep
 from technical_document_ml_service.api.schemas.predict import MLModelResponse, PredictAcceptedResponse
 from technical_document_ml_service.api.upload import collect_uploaded_documents
 from technical_document_ml_service.services.model_query_service import get_active_models
@@ -32,8 +32,8 @@ def get_prediction_models(
     status_code=status.HTTP_202_ACCEPTED,
 )
 def predict_documents(
-    session: SessionDep,
-    current_user: CurrentUserDep,
+    session: PlainSessionDep,
+    current_user: CurrentReadUserDep,
     model_name: Annotated[str, Form(min_length=1)],
     target_schema: Annotated[str, Form(min_length=1)],
     # TODO: рассмотреть батч-загрузку (list[UploadFile]) как отдельную фичу,

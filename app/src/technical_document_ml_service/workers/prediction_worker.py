@@ -114,6 +114,7 @@ def _handle_message(
                 message.task_id,
                 exc,
             )
+            # задача не найдена — никаких коммитов не было, откатываем грязное состояние
             session.rollback()
             outcome["not_found"] = True
         except Exception as exc:
@@ -123,6 +124,8 @@ def _handle_message(
                 message.task_id,
                 exc,
             )
+            # сервис уже вызвал rollback и зафиксировал FAILED-статус самостоятельно;
+            # только страховочный rollback на случай сбоя внутри _mark_task_as_failed
             session.rollback()
             outcome["error"] = True
         finally:

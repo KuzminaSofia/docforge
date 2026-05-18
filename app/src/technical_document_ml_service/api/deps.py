@@ -16,7 +16,7 @@ from technical_document_ml_service.core.security import (
     decode_access_token,
     get_auth_cookie_name,
 )
-from technical_document_ml_service.db.session import SessionLocal, get_db_session, get_read_session
+from technical_document_ml_service.db.session import SessionLocal, get_db_session, get_plain_session, get_read_session
 from technical_document_ml_service.domain.entities import User
 from technical_document_ml_service.domain.exceptions import AuthenticationError
 from technical_document_ml_service.services.auth_service import authenticate_user
@@ -28,6 +28,7 @@ http_bearer = HTTPBearer(auto_error=False)
 
 SessionDep = Annotated[Session, Depends(get_db_session)]
 ReadSessionDep = Annotated[Session, Depends(get_read_session)]
+PlainSessionDep = Annotated[Session, Depends(get_plain_session)]
 
 
 def _authenticate_from_credentials(

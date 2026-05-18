@@ -49,3 +49,15 @@ def get_read_session() -> Generator[Session, None, None]:
     finally:
         session.rollback()
         session.close()
+
+
+def get_plain_session() -> Generator[Session, None, None]:
+    """
+    сессия без автоматического commit/rollback — логика управления
+    транзакцией лежит на вызывающем сервисе
+    """
+    session = SessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
