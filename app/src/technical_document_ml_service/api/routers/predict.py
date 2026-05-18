@@ -23,7 +23,7 @@ def get_prediction_models(
 ) -> list[MLModelResponse]:
     """получить список активных ML-моделей, доступных для обработки"""
     models = get_active_models(session)
-    return [MLModelResponse(**m) for m in models]
+    return [MLModelResponse.from_item(m) for m in models]
 
 
 @router.post(
