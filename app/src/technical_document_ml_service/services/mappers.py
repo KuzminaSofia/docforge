@@ -53,6 +53,9 @@ def model_orm_to_domain(model_orm: MLModelORM) -> TechnicalDocumentExtractionMod
         supported_document_types=_parse_supported_document_types(
             model_orm.supported_document_types
         ),
+        backend_name=model_orm.backend_name,
+        backend_config=dict(model_orm.backend_config or {}),
+        model_kind=model_orm.model_kind,
         is_active=model_orm.is_active,
         entity_id=model_orm.id,
     )

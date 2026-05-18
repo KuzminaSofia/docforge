@@ -161,22 +161,19 @@ def _run_ml_backend(
     *,
     domain_task: DocumentExtractionTask,
     domain_model,
-    model_backend_name: str,
-    model_backend_config: dict,
-    model_kind: str,
 ):
     """выбрать backend и запустить ML-обработку"""
     backend_request = build_backend_request(
         task=domain_task,
         model_id=domain_model.id,
         model_name=domain_model.name,
-        model_kind=model_kind,
-        backend_name=model_backend_name,
-        backend_config=model_backend_config,
+        model_kind=domain_model.model_kind,
+        backend_name=domain_model.backend_name,
+        backend_config=domain_model.backend_config,
     )
     backend_selection = select_prediction_backend(
-        requested_backend_name=model_backend_name,
-        backend_config=model_backend_config,
+        requested_backend_name=domain_model.backend_name,
+        backend_config=domain_model.backend_config,
     )
 
     backend_result = backend_selection.backend.process(backend_request)
@@ -219,9 +216,6 @@ def _execute_prediction(
     domain_task: DocumentExtractionTask,
     domain_user,
     domain_model,
-    model_backend_name: str,
-    model_backend_config: dict,
-    model_kind: str,
 ) -> PredictionProcessingResult:
     """фаза ML-обработки: валидация -> backend -> сохранение результата"""
     _ensure_processing_can_start(
@@ -244,9 +238,6 @@ def _execute_prediction(
     backend_selection, backend_request, backend_result = _run_ml_backend(
         domain_task=domain_task,
         domain_model=domain_model,
-        model_backend_name=model_backend_name,
-        model_backend_config=model_backend_config,
-        model_kind=model_kind,
     )
 
     result = build_prediction_result_from_backend_result(
@@ -303,12 +294,10 @@ def process_document_prediction_task(
     if task_orm is None:
         raise NotFoundError(f"Задача с id={task_id} не найдена.")
 
-    # извлекаем infrastructure-поля ORM до перехода на доменные объекты
     callback_url: str | None = task_orm.callback_url
-    model_name_for_webhook: str = task_orm.model.name
-    model_backend_name: str = task_orm.model.backend_name
-    model_kind: str = task_orm.model.model_kind
-    model_backend_config: dict = dict(task_orm.model.backend_config or {})
+
+    # domain_model через маппер — backend_name/config/kind доступны только через него
+    domain_model = model_orm_to_domain(task_orm.model)
 
     current_status = TaskStatus(task_orm.status)
 
@@ -331,7 +320,7 @@ def process_document_prediction_task(
                     url=callback_url,
                     task_id=task_id,
                     status=TaskStatus.FAILED,
-                    model_name=model_name_for_webhook,
+                    model_name=domain_model.name,
                     result_id=None,
                     spent_credits=Decimal("0"),
                     completed_at=domain_task.finished_at,
@@ -361,7 +350,6 @@ def process_document_prediction_task(
         )
 
     domain_user = orm_to_domain_user(task_orm.user)
-    domain_model = model_orm_to_domain(task_orm.model)
     domain_task = task_orm_to_domain(task_orm)
 
     try:
@@ -371,9 +359,6 @@ def process_document_prediction_task(
             domain_task=domain_task,
             domain_user=domain_user,
             domain_model=domain_model,
-            model_backend_name=model_backend_name,
-            model_backend_config=model_backend_config,
-            model_kind=model_kind,
         )
 
         if callback_url:
@@ -381,7 +366,7 @@ def process_document_prediction_task(
                 url=callback_url,
                 task_id=processing_result.task_id,
                 status=processing_result.status,
-                model_name=model_name_for_webhook,
+                model_name=domain_model.name,
                 result_id=processing_result.result_id,
                 spent_credits=processing_result.spent_credits,
                 completed_at=processing_result.completed_at,
@@ -402,7 +387,7 @@ def process_document_prediction_task(
                 url=callback_url,
                 task_id=task_id,
                 status=TaskStatus.FAILED,
-                model_name=model_name_for_webhook,
+                model_name=domain_model.name,
                 result_id=None,
                 spent_credits=Decimal("0"),
                 completed_at=datetime.now(UTC),
