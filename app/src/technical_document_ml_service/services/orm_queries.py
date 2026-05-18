@@ -17,6 +17,19 @@ def get_user_orm_or_raise(session: Session, user_id: UUID) -> UserORM:
     return user_orm
 
 
+def get_user_orm_for_update(session: Session, user_id: UUID) -> UserORM:
+    """загрузить ORM-пользователя с пессимистичной блокировкой строки (SELECT FOR UPDATE)
+    используется там, где перед изменением баланса нужно исключить race condition:
+    конкурентные транзакции будут ждать снятия блокировки
+    """
+    user_orm = session.scalar(
+        select(UserORM).where(UserORM.id == user_id).with_for_update()
+    )
+    if user_orm is None:
+        raise NotFoundError("Пользователь не найден.")
+    return user_orm
+
+
 def get_model_orm_by_name_or_raise(session: Session, model_name: str) -> MLModelORM:
     """загрузить ORM-модель по имени или выбросить исключение"""
     model_orm = session.scalar(

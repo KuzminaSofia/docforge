@@ -26,7 +26,7 @@ from technical_document_ml_service.services.mappers import (
 )
 from technical_document_ml_service.services.orm_queries import (
     get_model_orm_by_name_or_raise,
-    get_user_orm_or_raise,
+    get_user_orm_for_update,
 )
 from technical_document_ml_service.services.prediction_persistence import (
     build_domain_documents,
@@ -77,7 +77,7 @@ def submit_document_prediction(
     task_persisted = False
 
     try:
-        user_orm = get_user_orm_or_raise(session, user_id)
+        user_orm = get_user_orm_for_update(session, user_id)
         model_orm = get_model_orm_by_name_or_raise(session, model_name)
 
         domain_user = orm_to_domain_user(user_orm)
