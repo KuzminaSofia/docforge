@@ -18,7 +18,7 @@ from technical_document_ml_service.api.schemas.tasks import (
     TaskStatusResponse,
     TasksListResponse,
 )
-from technical_document_ml_service.db.session import SessionLocal
+from technical_document_ml_service.db.session import read_session
 from technical_document_ml_service.domain.enums import TaskStatus
 from technical_document_ml_service.domain.exceptions import AuthorizationError, NotFoundError
 from technical_document_ml_service.services.artifact_service import get_task_artifact_file_path
@@ -129,23 +129,20 @@ async def stream_task_status(
             if await request.is_disconnected():
                 break
 
-            session = SessionLocal()
             try:
-                item = await asyncio.to_thread(
-                    get_user_task_status,
-                    session,
-                    user_id=user_id,
-                    task_id=task_id,
-                )
+                with read_session() as session:
+                    item = await asyncio.to_thread(
+                        get_user_task_status,
+                        session,
+                        user_id=user_id,
+                        task_id=task_id,
+                    )
             except (NotFoundError, AuthorizationError) as exc:
                 payload = json.dumps({"detail": str(exc)})
                 yield f"event: stream_error\ndata: {payload}\n\n"
                 break
             except Exception:
                 break
-            finally:
-                session.rollback()
-                session.close()
 
             is_terminal = item.status in _TERMINAL_STATUSES
             event_name = "done" if is_terminal else "status"

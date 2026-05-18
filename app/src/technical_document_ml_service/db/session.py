@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -38,10 +39,12 @@ def get_db_session() -> Generator[Session, None, None]:
         session.close()
 
 
-def get_read_session() -> Generator[Session, None, None]:
+@contextmanager
+def read_session() -> Generator[Session, None, None]:
     """
-    read-only session для запросов чтения
-    не коммитит, в конце запроса откатывает активную транзакцию
+    контекстный менеджер read-only сессии для использования вне DI-контейнера
+    (SSE-генераторы, фоновые задачи и любой код без FastAPI Depends)
+    не коммитит; всегда откатывает и закрывает соединение при выходе
     """
     session = SessionLocal()
     try:
@@ -49,6 +52,14 @@ def get_read_session() -> Generator[Session, None, None]:
     finally:
         session.rollback()
         session.close()
+
+
+def get_read_session() -> Generator[Session, None, None]:
+    """
+    read-only FastAPI-зависимость; делегирует lifecycle в read_session()
+    """
+    with read_session() as session:
+        yield session
 
 
 def get_plain_session() -> Generator[Session, None, None]:
