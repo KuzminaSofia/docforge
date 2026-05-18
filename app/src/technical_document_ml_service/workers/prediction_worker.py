@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import threading
 import time
 from collections.abc import Callable
@@ -34,16 +33,6 @@ def _configure_logging() -> None:
     )
 
 
-def _get_worker_id() -> str:
-    """получить идентификатор воркера из окружения"""
-    return os.getenv("WORKER_ID", "worker-unknown")
-
-
-def _get_reconnect_delay_seconds() -> int:
-    """получить интервал ожидания перед повторным подключением"""
-    return int(os.getenv("WORKER_RECONNECT_DELAY_SECONDS", "5"))
-
-
 def _ack_message(
     channel: pika.adapters.blocking_connection.BlockingChannel,
     delivery_tag: int,
@@ -68,12 +57,13 @@ def _handle_message(
     method: pika.spec.Basic.Deliver,
     _properties: pika.BasicProperties,
     body: bytes,
+    task_timeout_seconds: int,
 ) -> None:
     """обработать одно сообщение из очереди
 
     ML-инференс запускается в отдельном потоке, чтобы главный поток мог
     продолжать качать heartbeat RabbitMQ. Иначе BlockingConnection теряет
-    соединение при задачах длиннее 2×heartbeat (≈120 с).
+    соединение при задачах длиннее 2 heartbeat (120 с)
     """
     delivery_tag = method.delivery_tag
 
@@ -133,16 +123,32 @@ def _handle_message(
 
     thread = threading.Thread(target=_run_in_thread, daemon=True)
     thread.start()
+    deadline = time.monotonic() + task_timeout_seconds
 
-    # Пока поток работает — качаем heartbeat, чтобы не потерять соединение
+    # пока поток работает — качаем heartbeat, чтобы не потерять соединение.
+    # при превышении дедлайна выходим из цикла и проверяем thread.is_alive() ниже.
     try:
         while thread.is_alive():
-            channel.connection.process_data_events(time_limit=1)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            channel.connection.process_data_events(time_limit=min(1.0, remaining))
     except Exception:
-        thread.join()
+        thread.join(timeout=max(0.0, deadline - time.monotonic()))
         raise
 
-    thread.join()
+    thread.join(timeout=max(0.0, deadline - time.monotonic()))
+
+    if thread.is_alive():
+        LOGGER.critical(
+            "worker_id=%s | task_id=%s | Превышен таймаут обработки задачи (%ss). "
+            "Задача отклонена без requeue. Поток продолжает работу как daemon.",
+            worker_id,
+            message.task_id,
+            task_timeout_seconds,
+        )
+        _reject_message(channel, delivery_tag, requeue=False)
+        return
 
     # Ack/nack вызываем из главного потока — канал жив, heartbeat поддержан
     if "ok" in outcome:
@@ -168,6 +174,7 @@ def _handle_message(
 
 def _build_message_handler(
     worker_id: str,
+    task_timeout_seconds: int,
 ) -> Callable[
     [
         pika.adapters.blocking_connection.BlockingChannel,
@@ -191,6 +198,7 @@ def _build_message_handler(
             method=method,
             _properties=properties,
             body=body,
+            task_timeout_seconds=task_timeout_seconds,
         )
 
     return callback
@@ -200,9 +208,10 @@ def run_prediction_worker() -> None:
     """запустить worker для обработки задач предсказания"""
     _configure_logging()
 
-    worker_id = _get_worker_id()
-    reconnect_delay_seconds = _get_reconnect_delay_seconds()
-    message_handler = _build_message_handler(worker_id)
+    worker_id = app_settings.worker_id
+    reconnect_delay_seconds = app_settings.worker_reconnect_delay_seconds
+    task_timeout_seconds = app_settings.worker_task_timeout_seconds
+    message_handler = _build_message_handler(worker_id, task_timeout_seconds)
 
     LOGGER.info(
         "worker_id=%s | Запуск worker-а обработки задач | queue=%s",

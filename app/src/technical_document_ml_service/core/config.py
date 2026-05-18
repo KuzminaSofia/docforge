@@ -36,6 +36,10 @@ class AppSettings:
     max_upload_file_size_mb: int
     max_task_total_size_mb: int
 
+    worker_id: str
+    worker_reconnect_delay_seconds: int
+    worker_task_timeout_seconds: int
+
 
 def load_app_settings() -> AppSettings:
     """загрузить настройки приложения из переменных окружения"""
@@ -66,6 +70,9 @@ def load_app_settings() -> AppSettings:
         rabbitmq_ssl_enabled=_get_bool_env("RABBITMQ_SSL_ENABLED", False),
         max_upload_file_size_mb=int(os.getenv("APP_MAX_UPLOAD_FILE_SIZE_MB", "50")),
         max_task_total_size_mb=int(os.getenv("APP_MAX_TASK_TOTAL_SIZE_MB", "200")),
+        worker_id=os.getenv("WORKER_ID", "worker-unknown"),
+        worker_reconnect_delay_seconds=int(os.getenv("WORKER_RECONNECT_DELAY_SECONDS", "5")),
+        worker_task_timeout_seconds=int(os.getenv("WORKER_TASK_TIMEOUT_SECONDS", "600")),
     )
 
 
