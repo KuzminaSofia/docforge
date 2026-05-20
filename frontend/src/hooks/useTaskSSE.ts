@@ -22,7 +22,7 @@ export function useTaskSSE(taskId: string, enabled: boolean, callbacks: Callback
   useEffect(() => {
     if (!enabled) return;
 
-    const es = new EventSource(`/api/tasks/${taskId}/stream`);
+    const es = new EventSource(`/api/tasks/${taskId}/stream`, { withCredentials: true });
 
     es.addEventListener("status", (e: MessageEvent) => {
       try {

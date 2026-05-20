@@ -410,6 +410,24 @@ function MetaTab({ data }: { data: TaskResultResponse }) {
 
 // ── Artifacts tab ─────────────────────────────────────────────────────────────
 
+async function downloadArtifact(taskId: string, name: string): Promise<void> {
+  const url = `/api/tasks/${taskId}/artifacts/${encodeURIComponent(name)}`;
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) {
+    if (res.status === 401) {
+      window.location.href = "/login";
+    }
+    return;
+  }
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = name;
+  link.click();
+  URL.revokeObjectURL(blobUrl);
+}
+
 function ArtifactsTab({
   taskId,
   artifacts,
@@ -439,13 +457,13 @@ function ArtifactsTab({
               {a.kind} · {a.mime_type ?? "—"}
             </p>
           </div>
-          <a
-            href={`/api/tasks/${taskId}/artifacts/${encodeURIComponent(a.name)}`}
-            download={a.name}
+          <button
+            type="button"
+            onClick={() => void downloadArtifact(taskId, a.name)}
             className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-foreground hover:bg-accent transition-colors"
           >
             ↓
-          </a>
+          </button>
         </li>
       ))}
     </ul>
