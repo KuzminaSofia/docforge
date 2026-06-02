@@ -425,7 +425,7 @@ async function downloadArtifact(taskId: string, name: string): Promise<void> {
   link.href = blobUrl;
   link.download = name;
   link.click();
-  URL.revokeObjectURL(blobUrl);
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
 }
 
 function ArtifactsTab({
