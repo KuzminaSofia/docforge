@@ -7,10 +7,15 @@ import type { MLModelResponse } from "@/lib/api/types";
 
 export const metadata: Metadata = { title: "Новая обработка · DocForge" };
 
-export default async function PredictPage() {
-  const [user, models] = await Promise.all([
+export default async function PredictPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ model?: string; schema?: string }>;
+}) {
+  const [user, models, params] = await Promise.all([
     getRequiredUser(),
     serverFetch<MLModelResponse[]>("/predict/models").catch(() => [] as MLModelResponse[]),
+    searchParams,
   ]);
 
   const maxFileMb = parseInt(process.env.MAX_FILE_MB ?? "50", 10);
@@ -31,6 +36,8 @@ export default async function PredictPage() {
         models={models}
         userBalance={user.balance_credits}
         maxFileMb={maxFileMb}
+        initialModelName={params.model}
+        initialSchema={params.schema}
       />
     </div>
   );

@@ -42,6 +42,11 @@ class Settings:
 
     db_echo: bool = _to_bool(_get_env("DB_ECHO", default="false"))
 
+    db_pool_size: int = int(_get_env("DB_POOL_SIZE", default="5"))
+    db_max_overflow: int = int(_get_env("DB_MAX_OVERFLOW", default="10"))
+    db_pool_timeout: int = int(_get_env("DB_POOL_TIMEOUT", default="30"))
+    db_pool_recycle: int = int(_get_env("DB_POOL_RECYCLE", default="1800"))
+
     @property
     def database_url(self) -> str:
         """полный URL подключения к PostgreSQL"""

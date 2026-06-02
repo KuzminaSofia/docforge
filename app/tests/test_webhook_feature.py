@@ -1,20 +1,19 @@
 from __future__ import annotations
 
-from decimal import Decimal
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 from technical_document_ml_service.db.models import MLTaskORM
 from technical_document_ml_service.db.session import SessionLocal
 from technical_document_ml_service.domain.enums import TaskStatus
-from technical_document_ml_service.services.document_storage_service import (
-    IncomingDocumentData,
-)
+from technical_document_ml_service.messaging.contracts import WebhookDeliveryMessage
 from technical_document_ml_service.services.prediction_processing_service import (
     process_document_prediction_task,
 )
 from technical_document_ml_service.services.prediction_submission_service import (
     submit_document_prediction,
 )
+
+from helpers import make_incoming_document
 
 
 def _submit(api_user, api_model, *, callback_url: str | None = None):
@@ -24,13 +23,7 @@ def _submit(api_user, api_model, *, callback_url: str | None = None):
             user_id=api_user.id,
             model_name=api_model.name,
             target_schema="passport_fields",
-            documents=[
-                IncomingDocumentData(
-                    filename="sample.pdf",
-                    content_type="application/pdf",
-                    content=b"%PDF-1.4 test content",
-                )
-            ],
+            documents=[make_incoming_document()],
             callback_url=callback_url,
         )
 
@@ -109,18 +102,18 @@ def test_webhook_called_after_successful_processing(
     submission = _submit(api_user, api_model, callback_url=url)
 
     with patch(
-        "technical_document_ml_service.services.prediction_processing_service.send_task_webhook"
+        "technical_document_ml_service.services.prediction_processing_service.publish_webhook_delivery"
     ) as mock_webhook:
         with SessionLocal() as session:
             process_document_prediction_task(session, task_id=submission.task_id)
 
     mock_webhook.assert_called_once()
-    kwargs = mock_webhook.call_args.kwargs
-    assert kwargs["url"] == url
-    assert kwargs["status"] == TaskStatus.COMPLETED
-    assert kwargs["result_id"] is not None
-    assert kwargs["spent_credits"] == Decimal("10.00")
-    assert kwargs["error_message"] is None
+    msg: WebhookDeliveryMessage = mock_webhook.call_args.args[0]
+    assert msg.callback_url == url
+    assert msg.status == TaskStatus.COMPLETED.value
+    assert msg.result_id is not None
+    assert msg.spent_credits == "10.00"
+    assert msg.error_message is None
 
 
 def test_webhook_not_called_when_no_callback_url(
@@ -129,7 +122,7 @@ def test_webhook_not_called_when_no_callback_url(
     submission = _submit(api_user, api_model, callback_url=None)
 
     with patch(
-        "technical_document_ml_service.services.prediction_processing_service.send_task_webhook"
+        "technical_document_ml_service.services.prediction_processing_service.publish_webhook_delivery"
     ) as mock_webhook:
         with SessionLocal() as session:
             process_document_prediction_task(session, task_id=submission.task_id)
@@ -144,7 +137,7 @@ def test_webhook_called_with_failed_status_on_processing_error(
     submission = _submit(api_user, api_model, callback_url=url)
 
     with patch(
-        "technical_document_ml_service.services.prediction_processing_service.send_task_webhook"
+        "technical_document_ml_service.services.prediction_processing_service.publish_webhook_delivery"
     ) as mock_webhook:
         with patch(
             "technical_document_ml_service.services.prediction_processing_service.select_prediction_backend",
@@ -159,8 +152,8 @@ def test_webhook_called_with_failed_status_on_processing_error(
                     pass
 
     mock_webhook.assert_called_once()
-    kwargs = mock_webhook.call_args.kwargs
-    assert kwargs["url"] == url
-    assert kwargs["status"] == TaskStatus.FAILED
-    assert kwargs["result_id"] is None
-    assert kwargs["error_message"] == "backend unavailable"
+    msg: WebhookDeliveryMessage = mock_webhook.call_args.args[0]
+    assert msg.callback_url == url
+    assert msg.status == TaskStatus.FAILED.value
+    assert msg.result_id is None
+    assert msg.error_message == "backend unavailable"

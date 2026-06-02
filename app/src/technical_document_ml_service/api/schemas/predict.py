@@ -8,18 +8,29 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from technical_document_ml_service.domain.enums import TaskStatus
-from technical_document_ml_service.services.dto import ValidationIssueItem
+from technical_document_ml_service.services.dto import ModelItem, ValidationIssueItem
 
 
 class MLModelResponse(BaseModel):
     """активная ML-модель, доступная для обработки документов"""
 
-    id: str
+    id: UUID
     name: str
     description: str
     prediction_cost: Decimal
     backend_name: str
     model_kind: str
+
+    @classmethod
+    def from_item(cls, item: ModelItem) -> "MLModelResponse":
+        return cls(
+            id=item.id,
+            name=item.name,
+            description=item.description,
+            prediction_cost=item.prediction_cost,
+            backend_name=item.backend_name,
+            model_kind=item.model_kind,
+        )
 
 
 class ValidationIssueResponse(BaseModel):

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from technical_document_ml_service.db.models import (
     MLTaskORM,
+    OutboxEventORM,
     PredictionResultORM,
     UploadedDocumentORM,
 )
@@ -20,6 +23,7 @@ from technical_document_ml_service.domain.exceptions import (
     InsufficientBalanceError,
     ModelUnavailableError,
 )
+from technical_document_ml_service.messaging.contracts import PredictionTaskMessage
 from technical_document_ml_service.services.document_storage_service import (
     StoredDocumentData,
 )
@@ -126,6 +130,37 @@ def persist_prediction_result(
     session.flush()
 
     return result_orm
+
+
+def persist_outbox_event(
+    session: Session,
+    *,
+    task_id: UUID,
+    message: PredictionTaskMessage,
+) -> OutboxEventORM:
+    """атомарно сохранить outbox-событие вместе с задачей"""
+    event = OutboxEventORM(
+        task_id=task_id,
+        payload=message.to_payload(),
+    )
+    session.add(event)
+    return event
+
+
+def mark_outbox_event_published(
+    session: Session,
+    *,
+    task_id: UUID,
+) -> None:
+    """пометить outbox-событие как доставленное после успешного direct publish"""
+    event = session.scalar(
+        select(OutboxEventORM).where(
+            OutboxEventORM.task_id == task_id,
+            OutboxEventORM.published_at.is_(None),
+        )
+    )
+    if event is not None:
+        event.published_at = datetime.now(timezone.utc)
 
 
 def ensure_prediction_can_start(

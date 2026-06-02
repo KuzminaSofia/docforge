@@ -402,6 +402,9 @@ class TechnicalDocumentExtractionModel(MLModel):
         description: str,
         prediction_cost: Decimal,
         supported_document_types: set[DocumentType],
+        backend_name: str,
+        backend_config: dict,
+        model_kind: str,
         is_active: bool = True,
         entity_id: UUID | None = None,
     ) -> None:
@@ -413,11 +416,29 @@ class TechnicalDocumentExtractionModel(MLModel):
             entity_id=entity_id,
         )
         self._supported_document_types: set[DocumentType] = supported_document_types
+        self._backend_name: str = backend_name
+        self._backend_config: dict = backend_config
+        self._model_kind: str = model_kind
 
     @property
     def supported_document_types(self) -> set[DocumentType]:
         """вернуть поддерживаемые типы документов"""
         return self._supported_document_types
+
+    @property
+    def backend_name(self) -> str:
+        """вернуть имя ML-бэкенда для обработки"""
+        return self._backend_name
+
+    @property
+    def backend_config(self) -> dict:
+        """вернуть конфигурацию ML-бэкенда"""
+        return self._backend_config
+
+    @property
+    def model_kind(self) -> str:
+        """вернуть тип модели"""
+        return self._model_kind
 
 
 class MLTask(BaseEntity, ABC):

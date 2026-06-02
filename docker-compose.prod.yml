@@ -16,6 +16,9 @@ services:
       - /etc/letsencrypt/live/${DOMAIN}/privkey.pem:/etc/nginx/certs/key.pem:ro
 
   app:
+    build:
+      context: ./app
+      target: production
     restart: always
 
   worker-1:

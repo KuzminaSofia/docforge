@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import logging
-import os
+import threading
 import time
 from collections.abc import Callable
+from typing import Any
 
 import pika
 
 from technical_document_ml_service.core.config import app_settings
 from technical_document_ml_service.db.session import SessionLocal
+from technical_document_ml_service.workers.webhook_consumer import run_webhook_consumer_loop
 from technical_document_ml_service.domain.exceptions import NotFoundError
 from technical_document_ml_service.messaging.contracts import PredictionTaskMessage
 from technical_document_ml_service.messaging.rabbitmq import (
@@ -30,16 +32,6 @@ def _configure_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
-
-
-def _get_worker_id() -> str:
-    """получить идентификатор воркера из окружения"""
-    return os.getenv("WORKER_ID", "worker-unknown")
-
-
-def _get_reconnect_delay_seconds() -> int:
-    """получить интервал ожидания перед повторным подключением"""
-    return int(os.getenv("WORKER_RECONNECT_DELAY_SECONDS", "5"))
 
 
 def _ack_message(
@@ -66,8 +58,14 @@ def _handle_message(
     method: pika.spec.Basic.Deliver,
     _properties: pika.BasicProperties,
     body: bytes,
+    task_timeout_seconds: int,
 ) -> None:
-    """обработать одно сообщение из очереди"""
+    """обработать одно сообщение из очереди
+
+    ML-инференс запускается в отдельном потоке, чтобы главный поток мог
+    продолжать качать heartbeat RabbitMQ. Иначе BlockingConnection теряет
+    соединение при задачах длиннее 2 heartbeat (120 с)
+    """
     delivery_tag = method.delivery_tag
 
     try:
@@ -81,69 +79,103 @@ def _handle_message(
         _reject_message(channel, delivery_tag, requeue=False)
         return
 
-    session = None
+    outcome: dict[str, Any] = {}
 
-    try:
+    def _run_in_thread() -> None:
         session = SessionLocal()
+        try:
+            result = process_document_prediction_task(
+                session,
+                task_id=message.task_id,
+                redelivered=method.redelivered,
+            )
+            LOGGER.info(
+                "worker_id=%s | task_id=%s | status=%s | was_processed=%s | message=%s",
+                worker_id,
+                result.task_id,
+                result.status.value,
+                result.was_processed,
+                result.message,
+            )
+            outcome["ok"] = result
+        except NotFoundError as exc:
+            LOGGER.error(
+                "worker_id=%s | task_id=%s | Задача не найдена: %s",
+                worker_id,
+                message.task_id,
+                exc,
+            )
+            # задача не найдена — никаких коммитов не было, откатываем грязное состояние
+            session.rollback()
+            outcome["not_found"] = True
+        except Exception as exc:
+            LOGGER.exception(
+                "worker_id=%s | task_id=%s | Ошибка обработки задачи: %s",
+                worker_id,
+                message.task_id,
+                exc,
+            )
+            # сервис уже вызвал rollback и зафиксировал FAILED-статус самостоятельно;
+            # только страховочный rollback на случай сбоя внутри _mark_task_as_failed
+            session.rollback()
+            outcome["error"] = True
+        finally:
+            session.close()
 
-        result = process_document_prediction_task(
-            session,
-            task_id=message.task_id,
-        )
+    thread = threading.Thread(target=_run_in_thread, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + task_timeout_seconds
 
-        LOGGER.info(
-            "worker_id=%s | task_id=%s | status=%s | was_processed=%s | message=%s",
-            worker_id,
-            result.task_id,
-            result.status.value,
-            result.was_processed,
-            result.message,
-        )
-        _ack_message(channel, delivery_tag)
+    # пока поток работает — качаем heartbeat, чтобы не потерять соединение.
+    # при превышении дедлайна выходим из цикла и проверяем thread.is_alive() ниже.
+    try:
+        while thread.is_alive():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            channel.connection.process_data_events(time_limit=min(1.0, remaining))
+    except Exception:
+        thread.join(timeout=max(0.0, deadline - time.monotonic()))
+        raise
 
-    except NotFoundError as exc:
-        LOGGER.error(
-            "worker_id=%s | task_id=%s | Задача не найдена: %s",
+    thread.join(timeout=max(0.0, deadline - time.monotonic()))
+
+    if thread.is_alive():
+        LOGGER.critical(
+            "worker_id=%s | task_id=%s | Превышен таймаут обработки задачи (%ss). "
+            "Задача отклонена без requeue. Поток продолжает работу как daemon.",
             worker_id,
             message.task_id,
-            exc,
+            task_timeout_seconds,
         )
         _reject_message(channel, delivery_tag, requeue=False)
+        return
 
-    except Exception as exc:
-        LOGGER.exception(
-            "worker_id=%s | task_id=%s | Ошибка обработки задачи: %s",
+    # Ack/nack вызываем из главного потока — канал жив, heartbeat поддержан
+    if "ok" in outcome:
+        _ack_message(channel, delivery_tag)
+    elif "not_found" in outcome:
+        _reject_message(channel, delivery_tag, requeue=False)
+    elif method.redelivered:
+        LOGGER.error(
+            "worker_id=%s | task_id=%s | Повторная обработка снова завершилась ошибкой. "
+            "Сообщение будет отклонено без requeue, чтобы избежать бесконечного цикла.",
             worker_id,
             message.task_id,
-            exc,
         )
-
-        if session is not None and session.in_transaction():
-            session.rollback()
-
-        if method.redelivered:
-            LOGGER.error(
-                "worker_id=%s | task_id=%s | Повторная обработка снова завершилась ошибкой. "
-                "Сообщение будет отклонено без requeue, чтобы избежать бесконечного цикла.",
-                worker_id,
-                message.task_id,
-            )
-            _reject_message(channel, delivery_tag, requeue=False)
-        else:
-            LOGGER.info(
-                "worker_id=%s | task_id=%s | Сообщение будет возвращено в очередь для повторной попытки.",
-                worker_id,
-                message.task_id,
-            )
-            _reject_message(channel, delivery_tag, requeue=True)
-
-    finally:
-        if session is not None:
-            session.close()
+        _reject_message(channel, delivery_tag, requeue=False)
+    else:
+        LOGGER.info(
+            "worker_id=%s | task_id=%s | Сообщение будет возвращено в очередь для повторной попытки.",
+            worker_id,
+            message.task_id,
+        )
+        _reject_message(channel, delivery_tag, requeue=True)
 
 
 def _build_message_handler(
     worker_id: str,
+    task_timeout_seconds: int,
 ) -> Callable[
     [
         pika.adapters.blocking_connection.BlockingChannel,
@@ -167,6 +199,7 @@ def _build_message_handler(
             method=method,
             _properties=properties,
             body=body,
+            task_timeout_seconds=task_timeout_seconds,
         )
 
     return callback
@@ -176,9 +209,17 @@ def run_prediction_worker() -> None:
     """запустить worker для обработки задач предсказания"""
     _configure_logging()
 
-    worker_id = _get_worker_id()
-    reconnect_delay_seconds = _get_reconnect_delay_seconds()
-    message_handler = _build_message_handler(worker_id)
+    webhook_thread = threading.Thread(
+        target=run_webhook_consumer_loop,
+        name="webhook-consumer",
+        daemon=True,
+    )
+    webhook_thread.start()
+
+    worker_id = app_settings.worker_id
+    reconnect_delay_seconds = app_settings.worker_reconnect_delay_seconds
+    task_timeout_seconds = app_settings.worker_task_timeout_seconds
+    message_handler = _build_message_handler(worker_id, task_timeout_seconds)
 
     LOGGER.info(
         "worker_id=%s | Запуск worker-а обработки задач | queue=%s",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
 from fastapi import FastAPI
 
@@ -14,19 +15,21 @@ from technical_document_ml_service.api.routers import (
     tasks_router,
     users_router,
 )
-from technical_document_ml_service.db.init_db import init_db
+from technical_document_ml_service.core.config import app_settings
+from technical_document_ml_service.messaging.outbox_relay import OutboxRelay
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
-    init_db()
-    yield
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    relay = OutboxRelay(poll_interval=app_settings.outbox_poll_interval_seconds)
+    relay.start()
+    try:
+        yield
+    finally:
+        relay.stop()
 
 
-app = FastAPI(
-    title="Technical Document ML Service",
-    lifespan=lifespan,
-)
+app = FastAPI(title="Technical Document ML Service", lifespan=_lifespan)
 
 register_exception_handlers(app)
 

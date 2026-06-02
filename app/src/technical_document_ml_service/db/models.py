@@ -330,6 +330,37 @@ class PredictionResultORM(Base):
     )
 
 
+class OutboxEventORM(Base):
+    """ORM-модель transactional outbox для надежной доставки задач в RabbitMQ"""
+
+    __tablename__ = "outbox_events"
+    __table_args__ = (
+        Index(
+            "ix_outbox_events_pending",
+            "created_at",
+            postgresql_where=text("published_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("ml_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
 class MLRequestHistoryORM(Base):
     """ORM-модель истории ML-запросов и предсказаний"""
 

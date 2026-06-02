@@ -21,7 +21,7 @@ def set_auth_cookie(
         expires=expires_in_seconds,
         path="/",
         httponly=True,
-        samesite="strict",
+        samesite="lax",
         secure=is_auth_cookie_secure(),
     )
 
@@ -32,6 +32,6 @@ def delete_auth_cookie(response: Response) -> None:
         key=get_auth_cookie_name(),
         path="/",
         httponly=True,
-        samesite="strict",
+        samesite="lax",
         secure=is_auth_cookie_secure(),
     )

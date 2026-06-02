@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated
 from uuid import UUID
@@ -18,7 +19,7 @@ from technical_document_ml_service.api.schemas.tasks import (
     TaskStatusResponse,
     TasksListResponse,
 )
-from technical_document_ml_service.db.session import SessionLocal
+from technical_document_ml_service.db.session import read_session
 from technical_document_ml_service.domain.enums import TaskStatus
 from technical_document_ml_service.domain.exceptions import AuthorizationError, NotFoundError
 from technical_document_ml_service.services.artifact_service import get_task_artifact_file_path
@@ -28,6 +29,8 @@ from technical_document_ml_service.services.task_query_service import (
     get_user_tasks,
     get_user_task_status,
 )
+
+LOGGER = logging.getLogger("technical_document_ml_service.api.tasks")
 
 _TERMINAL_STATUSES = frozenset({TaskStatus.COMPLETED, TaskStatus.FAILED})
 _SSE_POLL_INTERVAL_SECONDS = 5.0
@@ -129,23 +132,25 @@ async def stream_task_status(
             if await request.is_disconnected():
                 break
 
-            session = SessionLocal()
             try:
-                item = await asyncio.to_thread(
-                    get_user_task_status,
-                    session,
-                    user_id=user_id,
-                    task_id=task_id,
-                )
+                with read_session() as session:
+                    item = await asyncio.to_thread(
+                        get_user_task_status,
+                        session,
+                        user_id=user_id,
+                        task_id=task_id,
+                    )
             except (NotFoundError, AuthorizationError) as exc:
                 payload = json.dumps({"detail": str(exc)})
                 yield f"event: stream_error\ndata: {payload}\n\n"
                 break
             except Exception:
+                LOGGER.exception(
+                    "task_id=%s | user_id=%s | Неожиданная ошибка в SSE-генераторе, стрим закрыт",
+                    task_id,
+                    user_id,
+                )
                 break
-            finally:
-                session.rollback()
-                session.close()
 
             is_terminal = item.status in _TERMINAL_STATUSES
             event_name = "done" if is_terminal else "status"

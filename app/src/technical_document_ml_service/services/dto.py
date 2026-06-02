@@ -14,6 +14,18 @@ from technical_document_ml_service.domain.enums import (
 
 
 @dataclass(frozen=True, slots=True)
+class ModelItem:
+    """активная ML-модель, доступная для обработки документов"""
+
+    id: UUID
+    name: str
+    description: str
+    prediction_cost: Decimal
+    backend_name: str
+    model_kind: str
+
+
+@dataclass(frozen=True, slots=True)
 class TransactionHistoryItem:
     """элемент истории транзакций пользователя"""
 

@@ -18,9 +18,11 @@ interface PredictFormProps {
   models: MLModelResponse[];
   userBalance: string;
   maxFileMb: number;
+  initialModelName?: string;
+  initialSchema?: string;
 }
 
-export function PredictForm({ models, userBalance, maxFileMb }: PredictFormProps) {
+export function PredictForm({ models, userBalance, maxFileMb, initialModelName, initialSchema }: PredictFormProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -28,8 +30,11 @@ export function PredictForm({ models, userBalance, maxFileMb }: PredictFormProps
   const [isDragging, setIsDragging] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
 
-  const [modelName, setModelName] = useState(models[0]?.name ?? "");
-  const [targetSchema, setTargetSchema] = useState("");
+  const resolvedInitialModel = initialModelName && models.find((m) => m.name === initialModelName)
+    ? initialModelName
+    : models[0]?.name ?? "";
+  const [modelName, setModelName] = useState(resolvedInitialModel);
+  const [targetSchema, setTargetSchema] = useState(initialSchema ?? "");
   const [callbackUrl, setCallbackUrl] = useState("");
 
   const [submitError, setSubmitError] = useState<string | null>(null);

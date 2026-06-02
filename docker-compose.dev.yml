@@ -1,10 +1,18 @@
-# Dev override: hot-reload для frontend
+# Dev override: hot-reload для frontend + live-mount alembic для migrate
 # Запуск: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 #
 # Изменения в .tsx/.ts файлах применяются мгновенно (HMR).
 # node_modules хранится в именованном volume — не конфликтует с хост-машиной.
+# migrate монтирует alembic/alembic.ini с хоста — новые миграции применяются
+# без пересборки образа (docker compose run --rm migrate).
 
 services:
+  migrate:
+    volumes:
+      - ./app/src:/app/src
+      - ./app/alembic:/app/alembic
+      - ./app/alembic.ini:/app/alembic.ini
+
   frontend:
     build:
       context: ./frontend

@@ -1,7 +1,20 @@
 services:
+  migrate:
+    build:
+      context: ./app
+      target: migrate
+    container_name: technical-document-migrate
+    env_file:
+      - ./app/.env
+    restart: "no"
+    depends_on:
+      database:
+        condition: service_healthy
+
   app:
     build:
       context: ./app
+      target: development
     container_name: technical-document-app
     env_file:
       - ./app/.env
@@ -11,11 +24,13 @@ services:
     volumes:
       - ./app/src:/app/src
       - ./app/tests:/app/tests
+      - ./app/alembic:/app/alembic
+      - ./app/alembic.ini:/app/alembic.ini
       - ./storage/uploads:/app/storage/uploads
       - ./storage/artifacts:/app/storage/artifacts
     depends_on:
-      database:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
 
@@ -35,8 +50,8 @@ services:
       - ./storage/uploads:/app/storage/uploads
       - ./storage/artifacts:/app/storage/artifacts
     depends_on:
-      database:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
 
@@ -56,8 +71,8 @@ services:
       - ./storage/uploads:/app/storage/uploads
       - ./storage/artifacts:/app/storage/artifacts
     depends_on:
-      database:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
 
@@ -65,8 +80,8 @@ services:
     build:
       context: ./frontend
     container_name: technical-document-frontend
-    environment:
-      INTERNAL_API_URL: http://app:8000
+    env_file:
+      - ./frontend/.env
     depends_on:
       - app
 

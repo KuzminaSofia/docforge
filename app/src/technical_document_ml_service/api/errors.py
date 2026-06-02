@@ -62,7 +62,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_authentication(_: Request, exc: AuthenticationError) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            headers={"WWW-Authenticate": "Basic"},
+            headers={"WWW-Authenticate": "Bearer"},
             content=_error_payload(
                 code="authentication_failed",
                 message=str(exc),

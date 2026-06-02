@@ -10,11 +10,12 @@ from technical_document_ml_service.core.config import app_settings
 
 @dataclass(frozen=True, slots=True)
 class IncomingDocumentData:
-    """входные данные загружаемого документа"""
+    """входные данные загружаемого документа — ссылка на временный файл на диске"""
 
     filename: str
     content_type: str | None
-    content: bytes
+    temp_path: Path
+    size_bytes: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,28 +40,33 @@ def save_documents(
     owner_id: UUID,
     documents: list[IncomingDocumentData],
 ) -> list[StoredDocumentData]:
-    """сохранить документы пользователя в локальное файловое хранилище"""
+    """переместить временные файлы в постоянное хранилище"""
     base_dir = Path(app_settings.uploads_dir) / str(owner_id)
     base_dir.mkdir(parents=True, exist_ok=True)
 
     stored_documents: list[StoredDocumentData] = []
 
-    for document in documents:
-        original_filename = _normalize_filename(document.filename)
-        suffix = Path(original_filename).suffix
-        stored_filename = f"{uuid4().hex}{suffix}"
-        destination = base_dir / stored_filename
+    try:
+        for document in documents:
+            original_filename = _normalize_filename(document.filename)
+            suffix = Path(original_filename).suffix
+            stored_filename = f"{uuid4().hex}{suffix}"
+            destination = base_dir / stored_filename
 
-        destination.write_bytes(document.content)
+            document.temp_path.rename(destination)
 
-        stored_documents.append(
-            StoredDocumentData(
-                original_filename=original_filename,
-                storage_path=str(destination),
-                mime_type=document.content_type or "application/octet-stream",
-                size_bytes=len(document.content),
+            stored_documents.append(
+                StoredDocumentData(
+                    original_filename=original_filename,
+                    storage_path=str(destination),
+                    mime_type=document.content_type or "application/octet-stream",
+                    size_bytes=document.size_bytes,
+                )
             )
-        )
+    except Exception:
+        for remaining in documents[len(stored_documents):]:
+            remaining.temp_path.unlink(missing_ok=True)
+        raise
 
     return stored_documents
 

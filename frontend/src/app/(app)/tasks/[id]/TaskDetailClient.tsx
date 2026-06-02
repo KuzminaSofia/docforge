@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
 import { clientFetch, clientFetchText } from "@/lib/api/client";
 import { useTaskSSE } from "@/hooks/useTaskSSE";
 import { formatDateTime } from "@/lib/format";
@@ -88,8 +89,7 @@ export function TaskDetailClient({ taskId, initial }: Props) {
       .finally(() => setMarkdownLoading(false));
 
     return () => controller.abort();
-    // data.artifacts не включаем — артефакты не меняются после completed
-  }, [status, taskId]);
+  }, [status, taskId, data.artifacts]);
 
   return (
     <div className="flex flex-col h-full">
@@ -119,7 +119,13 @@ export function TaskDetailClient({ taskId, initial }: Props) {
         {/* Left panel */}
         <div className="flex flex-1 flex-col overflow-hidden p-6 min-h-0">
           {!isTerminal && <ProgressStepper status={status} />}
-          {status === "failed" && <ErrorCard message={data.task.error_message} />}
+          {status === "failed" && (
+            <ErrorCard
+              message={data.task.error_message}
+              modelName={data.task.model_name}
+              targetSchema={data.task.target_schema}
+            />
+          )}
           {status === "completed" && (
             <MarkdownPanel
               content={markdownContent}
@@ -187,16 +193,56 @@ function ProgressStepper({ status }: { status: TaskStatus }) {
 
 // ── Error card ────────────────────────────────────────────────────────────────
 
-function ErrorCard({ message }: { message: string | null }) {
+function ErrorCard({
+  message,
+  modelName,
+  targetSchema,
+}: {
+  message: string | null;
+  modelName: string;
+  targetSchema: string | null;
+}) {
+  const retryParams = new URLSearchParams();
+  retryParams.set("model", modelName);
+  if (targetSchema) retryParams.set("schema", targetSchema);
+
   return (
     <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-6">
-      <p className="mb-1 text-sm font-semibold text-destructive">Обработка завершилась с ошибкой</p>
+      <div className="mb-3 flex items-start justify-between gap-4">
+        <p className="text-sm font-semibold text-destructive">Обработка завершилась с ошибкой</p>
+        <Link
+          href={`/predict?${retryParams.toString()}`}
+          className="shrink-0 rounded-md border border-destructive/40 bg-background px-3 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"
+        >
+          Повторить
+        </Link>
+      </div>
       {message && <p className="text-xs text-destructive/80 font-mono whitespace-pre-wrap">{message}</p>}
     </div>
   );
 }
 
 // ── Markdown panel ────────────────────────────────────────────────────────────
+
+function CopyButton({ getText }: { getText: () => string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(getText()).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="rounded px-2 py-0.5 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+    >
+      {copied ? "Скопировано!" : "Копировать"}
+    </button>
+  );
+}
 
 function MarkdownPanel({
   content,
@@ -207,6 +253,8 @@ function MarkdownPanel({
   loading: boolean;
   hasArtifacts: boolean;
 }) {
+  const [view, setView] = useState<"rendered" | "raw">("rendered");
+
   if (loading) {
     return (
       <div className="flex items-center justify-center rounded-xl border border-border bg-card p-10">
@@ -226,14 +274,34 @@ function MarkdownPanel({
   }
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden flex flex-col flex-1 min-h-0">
-      <div className="border-b border-border bg-muted/40 px-4 py-2 shrink-0">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Markdown-превью
-        </p>
+      <div className="border-b border-border bg-muted/40 px-4 py-2 shrink-0 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          {(["rendered", "raw"] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={cn(
+                "rounded px-2 py-0.5 text-[11px] font-medium transition-colors",
+                view === v
+                  ? "bg-background text-foreground shadow-sm border border-border"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {v === "rendered" ? "Rendered" : "Raw"}
+            </button>
+          ))}
+        </div>
+        <CopyButton getText={() => content} />
       </div>
-      <pre className="overflow-auto p-4 text-xs text-foreground font-mono whitespace-pre-wrap leading-relaxed min-h-0">
-        {content}
-      </pre>
+      {view === "rendered" ? (
+        <div className="overflow-auto p-4 min-h-0 text-sm text-foreground leading-relaxed [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-3 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mb-1.5 [&_p]:mb-2 [&_ul]:mb-2 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:mb-2 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:mb-0.5 [&_strong]:font-semibold [&_em]:italic [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre]:mb-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_table]:w-full [&_table]:border-collapse [&_table]:mb-2 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-xs [&_th]:font-medium [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_td]:text-xs [&_hr]:border-border [&_hr]:my-3">
+          <ReactMarkdown>{content}</ReactMarkdown>
+        </div>
+      ) : (
+        <pre className="overflow-auto p-4 text-xs text-foreground font-mono whitespace-pre-wrap leading-relaxed min-h-0">
+          {content}
+        </pre>
+      )}
     </div>
   );
 }
@@ -283,8 +351,18 @@ function TabBar({
 
 // ── Meta tab ──────────────────────────────────────────────────────────────────
 
+function formatDuration(startedAt: string | null, completedAt: string | null): string | null {
+  if (!startedAt || !completedAt) return null;
+  const ms = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+  const secs = Math.round(ms / 1000);
+  if (secs < 60) return `${secs} с`;
+  const mins = Math.floor(secs / 60);
+  return `${mins} мин ${secs % 60} с`;
+}
+
 function MetaTab({ data }: { data: TaskResultResponse }) {
   const { task } = data;
+  const duration = formatDuration(task.started_at, task.completed_at);
   const rows: { label: string; value: string | null | undefined }[] = [
     { label: "ID задачи", value: task.id },
     { label: "Статус", value: task.status },
@@ -295,6 +373,7 @@ function MetaTab({ data }: { data: TaskResultResponse }) {
     { label: "Создана", value: task.created_at ? formatDateTime(task.created_at) : null },
     { label: "Старт", value: task.started_at ? formatDateTime(task.started_at) : null },
     { label: "Завершена", value: task.completed_at ? formatDateTime(task.completed_at) : null },
+    { label: "Время обработки", value: duration },
   ];
 
   return (
@@ -331,6 +410,24 @@ function MetaTab({ data }: { data: TaskResultResponse }) {
 
 // ── Artifacts tab ─────────────────────────────────────────────────────────────
 
+async function downloadArtifact(taskId: string, name: string): Promise<void> {
+  const url = `/api/tasks/${taskId}/artifacts/${encodeURIComponent(name)}`;
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) {
+    if (res.status === 401) {
+      window.location.href = "/login";
+    }
+    return;
+  }
+  const blob = await res.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+}
+
 function ArtifactsTab({
   taskId,
   artifacts,
@@ -360,13 +457,13 @@ function ArtifactsTab({
               {a.kind} · {a.mime_type ?? "—"}
             </p>
           </div>
-          <a
-            href={`/api/tasks/${taskId}/artifacts/${encodeURIComponent(a.name)}`}
-            download={a.name}
+          <button
+            type="button"
+            onClick={() => void downloadArtifact(taskId, a.name)}
             className="shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-foreground hover:bg-accent transition-colors"
           >
             ↓
-          </a>
+          </button>
         </li>
       ))}
     </ul>
@@ -379,10 +476,16 @@ function JsonTab({ data }: { data: Record<string, unknown> | null }) {
   if (!data) {
     return <p className="text-sm text-muted-foreground text-center py-8">Данных нет</p>;
   }
+  const jsonStr = JSON.stringify(data, null, 2);
   return (
-    <pre className="text-[11px] font-mono text-foreground whitespace-pre-wrap break-all leading-relaxed">
-      {JSON.stringify(data, null, 2)}
-    </pre>
+    <div className="relative">
+      <div className="absolute top-0 right-0">
+        <CopyButton getText={() => jsonStr} />
+      </div>
+      <pre className="text-[11px] font-mono text-foreground whitespace-pre-wrap break-all leading-relaxed pt-6">
+        {jsonStr}
+      </pre>
+    </div>
   );
 }
 

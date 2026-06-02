@@ -28,6 +28,7 @@ class AppSettings:
     rabbitmq_password: str
     rabbitmq_virtual_host: str
     rabbitmq_queue_name: str
+    rabbitmq_webhook_queue_name: str
     rabbitmq_heartbeat: int
     rabbitmq_blocked_connection_timeout: int
     rabbitmq_prefetch_count: int
@@ -35,6 +36,12 @@ class AppSettings:
 
     max_upload_file_size_mb: int
     max_task_total_size_mb: int
+
+    worker_id: str
+    worker_reconnect_delay_seconds: int
+    worker_task_timeout_seconds: int
+
+    outbox_poll_interval_seconds: int
 
 
 def load_app_settings() -> AppSettings:
@@ -58,6 +65,10 @@ def load_app_settings() -> AppSettings:
             "RABBITMQ_PREDICTION_QUEUE",
             "technical_document_prediction_tasks",
         ),
+        rabbitmq_webhook_queue_name=os.getenv(
+            "RABBITMQ_WEBHOOK_QUEUE",
+            "technical_document_webhook_delivery",
+        ),
         rabbitmq_heartbeat=int(os.getenv("RABBITMQ_HEARTBEAT", "60")),
         rabbitmq_blocked_connection_timeout=int(
             os.getenv("RABBITMQ_BLOCKED_CONNECTION_TIMEOUT", "30")
@@ -66,6 +77,10 @@ def load_app_settings() -> AppSettings:
         rabbitmq_ssl_enabled=_get_bool_env("RABBITMQ_SSL_ENABLED", False),
         max_upload_file_size_mb=int(os.getenv("APP_MAX_UPLOAD_FILE_SIZE_MB", "50")),
         max_task_total_size_mb=int(os.getenv("APP_MAX_TASK_TOTAL_SIZE_MB", "200")),
+        worker_id=os.getenv("WORKER_ID", "worker-unknown"),
+        worker_reconnect_delay_seconds=int(os.getenv("WORKER_RECONNECT_DELAY_SECONDS", "5")),
+        worker_task_timeout_seconds=int(os.getenv("WORKER_TASK_TIMEOUT_SECONDS", "600")),
+        outbox_poll_interval_seconds=int(os.getenv("APP_OUTBOX_POLL_INTERVAL_SECONDS", "60")),
     )
 
 

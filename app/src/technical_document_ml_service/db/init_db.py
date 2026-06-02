@@ -1,36 +1,34 @@
 from __future__ import annotations
 
-import hashlib
 from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from technical_document_ml_service.core.security import (
+    PASSWORD_SCHEME_PBKDF2_SHA256,
+    hash_password,
+)
 from technical_document_ml_service.domain.enums import DocumentType, UserRole
 from technical_document_ml_service.inference.registry import (
     DOCLING_BACKEND_NAME,
     TECHNICAL_DOCUMENT_MODEL_KIND,
 )
 
-from technical_document_ml_service.db.base import Base
 from technical_document_ml_service.db.models import MLModelORM, UserORM
-from technical_document_ml_service.db.session import SessionLocal, engine
+from technical_document_ml_service.db.session import SessionLocal
 
 
-def _hash_demo_password(raw_password: str) -> str:
-    return hashlib.sha256(raw_password.encode("utf-8")).hexdigest()
-
-
-def create_tables() -> None:
-    """создает все таблицы, зарегистрированные в metadata"""
-    Base.metadata.create_all(bind=engine)
+def _is_pbkdf2_hash(password_hash: str) -> bool:
+    """проверить, что хеш уже в правильном формате pbkdf2_sha256$..."""
+    return password_hash.startswith(f"{PASSWORD_SCHEME_PBKDF2_SHA256}$")
 
 
 def _ensure_user(
     session: Session,
     *,
     email: str,
-    password_hash: str,
+    raw_password: str,
     role: str,
     balance_credits: Decimal,
     is_active: bool = True,
@@ -38,18 +36,23 @@ def _ensure_user(
     existing_user = session.scalar(
         select(UserORM).where(UserORM.email == email)
     )
-    if existing_user is not None:
+
+    if existing_user is None:
+        session.add(
+            UserORM(
+                email=email,
+                password_hash=hash_password(raw_password),
+                role=role,
+                balance_credits=balance_credits,
+                is_active=is_active,
+            )
+        )
         return
 
-    session.add(
-        UserORM(
-            email=email,
-            password_hash=password_hash,
-            role=role,
-            balance_credits=balance_credits,
-            is_active=is_active,
-        )
-    )
+    # пользователь уже существует — проверяем формат хеша.
+    # если хеш не в формате pbkdf2_sha256 (например, старый SHA-256 hex) - обновить его
+    if not _is_pbkdf2_hash(existing_user.password_hash):
+        existing_user.password_hash = hash_password(raw_password)
 
 
 def _ensure_model(
@@ -89,14 +92,14 @@ def seed_initial_data(session: Session) -> None:
     _ensure_user(
         session,
         email="demo.user@example.com",
-        password_hash=_hash_demo_password("demo-user-password"),
+        raw_password="demo-user-password",
         role=UserRole.USER.value,
         balance_credits=Decimal("100.00"),
     )
     _ensure_user(
         session,
         email="demo.admin@example.com",
-        password_hash=_hash_demo_password("demo-admin-password"),
+        raw_password="demo-admin-password",
         role=UserRole.ADMIN.value,
         balance_credits=Decimal("1000.00"),
     )
@@ -123,12 +126,6 @@ def seed_initial_data(session: Session) -> None:
     )
 
 
-def init_db() -> None:
-    """создает таблицы и заполняет БД начальными данными"""
-    create_tables()
+if __name__ == "__main__":
     with SessionLocal.begin() as session:
         seed_initial_data(session)
-
-
-if __name__ == "__main__":
-    init_db()
