@@ -8,7 +8,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from technical_document_ml_service.api.deps import CurrentReadUserDep, ReadSessionDep, UserIdForSSEDep
 from technical_document_ml_service.api.schemas.tasks import (
@@ -22,7 +22,8 @@ from technical_document_ml_service.api.schemas.tasks import (
 from technical_document_ml_service.db.session import read_session
 from technical_document_ml_service.domain.enums import TaskStatus
 from technical_document_ml_service.domain.exceptions import AuthorizationError, NotFoundError
-from technical_document_ml_service.services.artifact_service import get_task_artifact_file_path
+from technical_document_ml_service.services.artifact_service import get_task_artifact_descriptor
+from technical_document_ml_service.storage import ObjectNotFoundError, get_object_storage
 from technical_document_ml_service.services.task_query_service import (
     get_user_task_details,
     get_user_task_result,
@@ -183,13 +184,22 @@ def download_task_artifact(
     artifact_name: str,
     session: ReadSessionDep,
     current_user: CurrentReadUserDep,
-) -> FileResponse:
-    """скачать артефакт задачи"""
+) -> StreamingResponse:
+    """скачать артефакт задачи (стримится из object storage)"""
     bundle = get_user_task_result(session, user_id=current_user.id, task_id=task_id)
-    descriptor = get_task_artifact_file_path(bundle, artifact_name)
+    descriptor = get_task_artifact_descriptor(bundle, artifact_name)
 
-    return FileResponse(
-        str(descriptor.file_path),
-        filename=artifact_name,
-        media_type=descriptor.mime_type or "application/octet-stream",
+    try:
+        stream = get_object_storage().open_stream(descriptor.storage_key)
+    except ObjectNotFoundError as exc:
+        raise NotFoundError(f"Файл артефакта '{artifact_name}' недоступен.") from exc
+
+    headers = {"Content-Disposition": f'attachment; filename="{artifact_name}"'}
+    if stream.content_length is not None:
+        headers["Content-Length"] = str(stream.content_length)
+
+    return StreamingResponse(
+        stream.chunks,
+        media_type=descriptor.mime_type or stream.content_type or "application/octet-stream",
+        headers=headers,
     )

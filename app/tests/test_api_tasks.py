@@ -172,6 +172,60 @@ def test_get_task_result_returns_result_and_artifacts_after_processing(
     assert len(body["artifacts"]) >= 1
 
 
+def test_download_task_artifact_streams_file_from_storage(
+    client,
+    api_user,
+    api_model,
+    auth_headers,
+    publish_task_spy,
+) -> None:
+    submission = submit_test_task(api_user, api_model)
+
+    with SessionLocal() as session:
+        process_document_prediction_task(
+            session,
+            task_id=submission.task_id,
+        )
+
+    result = client.get(
+        f"/tasks/{submission.task_id}/result",
+        headers=auth_headers,
+    ).json()
+    artifact_name = result["artifacts"][0]["name"]
+
+    response = client.get(
+        f"/tasks/{submission.task_id}/artifacts/{artifact_name}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert artifact_name in response.headers["content-disposition"]
+    assert len(response.content) > 0
+
+
+def test_download_unknown_task_artifact_returns_404(
+    client,
+    api_user,
+    api_model,
+    auth_headers,
+    publish_task_spy,
+) -> None:
+    submission = submit_test_task(api_user, api_model)
+
+    with SessionLocal() as session:
+        process_document_prediction_task(
+            session,
+            task_id=submission.task_id,
+        )
+
+    response = client.get(
+        f"/tasks/{submission.task_id}/artifacts/does-not-exist.json",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 404
+
+
 def test_get_task_details_for_foreign_user_returns_403(
     client,
     api_user,

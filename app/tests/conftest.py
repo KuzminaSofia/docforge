@@ -15,6 +15,7 @@ from technical_document_ml_service.db.models import MLModelORM, UserORM
 from technical_document_ml_service.db.session import SessionLocal, engine
 from technical_document_ml_service.domain.enums import UserRole
 from technical_document_ml_service.main import app
+from technical_document_ml_service.storage import reset_object_storage
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -45,11 +46,16 @@ def clean_database() -> None:
 @pytest.fixture(autouse=True)
 def isolated_storage_dir(tmp_path) -> None:
     """
-    подменяет директории хранения файлов на временные
-    для каждого теста
+    подменяет object storage на изолированный filesystem-бэкенд
+    под временным каталогом для каждого теста
     """
-    object.__setattr__(app_settings, "uploads_dir", str(tmp_path / "uploads"))
-    object.__setattr__(app_settings, "artifacts_dir", str(tmp_path / "artifacts"))
+    object.__setattr__(app_settings, "storage_backend", "filesystem")
+    object.__setattr__(app_settings, "storage_filesystem_root", str(tmp_path / "object-store"))
+    object.__setattr__(app_settings, "uploads_dir", "uploads")
+    object.__setattr__(app_settings, "artifacts_dir", "artifacts")
+    reset_object_storage()
+    yield
+    reset_object_storage()
 
 @pytest.fixture
 def client():

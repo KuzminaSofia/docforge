@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import os
-import tempfile
-from pathlib import Path
+import io
 
-from technical_document_ml_service.core.config import app_settings
 from technical_document_ml_service.db.session import SessionLocal
 from technical_document_ml_service.services.document_storage_service import (
     IncomingDocumentData,
@@ -23,17 +20,10 @@ def make_incoming_document(
     content: bytes = _DEFAULT_PDF_CONTENT,
 ) -> IncomingDocumentData:
     """создать IncomingDocumentData из bytes-контента для тестов"""
-    uploads_root = Path(app_settings.uploads_dir)
-    uploads_root.mkdir(parents=True, exist_ok=True)
-    fd, tmp_str = tempfile.mkstemp(dir=uploads_root)
-    tmp_path = Path(tmp_str)
-    os.write(fd, content)
-    os.close(fd)
     return IncomingDocumentData(
         filename=filename,
         content_type=content_type,
-        temp_path=tmp_path,
-        size_bytes=len(content),
+        stream=io.BytesIO(content),
     )
 
 

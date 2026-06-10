@@ -15,8 +15,11 @@ ruff_cache/
 build/
 dist/
 
-storage/rabbitmq/*
-storage/
+# хостовая дата-директория (rabbitmq и пр.) — анкор на корень, чтобы не игнорировать
+# исходный пакет app/src/.../storage/
+/storage/rabbitmq/*
+/storage/
+
 
 # Environment files with real secrets — use app/.env.example as template
 app/.env
