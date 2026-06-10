@@ -37,7 +37,7 @@
 1. Пользователь регистрируется или входит в систему
 2. Пользователь пополняет баланс
 3. Пользователь загружает технический документ (PDF, DOCX или DOC)
-4. API сохраняет документы в файловое хранилище
+4. API стримит документы в объектное хранилище (S3-совместимое)
 5. API создает ML-задачу в базе данных
 6. API публикует сообщение о задаче в RabbitMQ
 7. Один из worker-процессов забирает задачу из очереди
@@ -56,6 +56,7 @@
 - **web-proxy** — Nginx: `/api/*` → FastAPI, `/` → Next.js;
 - **database** — PostgreSQL;
 - **rabbitmq** — брокер сообщений для асинхронной обработки ML-задач;
+- **minio** — S3-совместимое объектное хранилище для документов и артефактов (в проде — реальный S3);
 - **worker-1 / worker-2** — отдельные consumer-процессы
 
 Схема взаимодействия:
@@ -70,10 +71,11 @@ Browser
    |
    +---> /api/*      --> FastAPI app --> PostgreSQL
                                      --> RabbitMQ
+                                     --> S3 / MinIO (стрим документов, отдача артефактов)
                                            |
                                            v
                                       ML Workers --> PostgreSQL
-                                                 --> storage/artifacts
+                                                 --> S3 / MinIO (артефакты)
 ```
 
 ---
@@ -83,6 +85,7 @@ Browser
 **Backend:**
 - Python 3.11, FastAPI, SQLAlchemy, Pydantic, Pytest
 - PostgreSQL, RabbitMQ
+- S3-совместимое объектное хранилище (MinIO локально / S3 в проде), boto3
 - Docling для обработки технических документов
 - JWT cookie auth (Web UI), Basic Auth / Bearer Auth (API)
 
@@ -92,7 +95,7 @@ Browser
 - Jest + React Testing Library
 
 **Инфраструктура:**
-- Docker / Docker Compose, Nginx
+- Docker / Docker Compose, Nginx, MinIO (S3-совместимое хранилище)
 
 ---
 
@@ -122,6 +125,7 @@ technical-document-ml-service/
 │   │       ├── inference/    # backend-обработка документов
 │   │       ├── messaging/    # RabbitMQ-контракты и подключение к брокеру
 │   │       ├── services/     # прикладные сервисы и use cases
+│   │       ├── storage/      # абстракция объектного хранилища (S3 / filesystem)
 │   │       ├── web/          # legacy Jinja2 Web UI (устарел, заменён Next.js)
 │   │       └── workers/      # код worker-процессов
 │   └── tests/                # unit, API и системные тесты
@@ -131,12 +135,13 @@ technical-document-ml-service/
 ├── web-proxy/
 │   ├── Dockerfile
 │   └── nginx.conf
+├── minio/
+│   └── provision.sh          # provisioning MinIO: bucket, scoped-юзер, SSE, lifecycle
 ├── storage/
-│   ├── artifacts/            # результаты и артефакты обработки
-│   ├── rabbitmq/             # данные RabbitMQ
-│   └── uploads/              # загруженные пользователем документы
+│   └── rabbitmq/             # данные RabbitMQ (документы и артефакты — в объектном хранилище)
 ├── docker-compose.yml
 ├── docker-compose.dev.yml    # override для frontend hot-reload
+├── docker-compose.prod.yml   # override для прода (TLS, restart-политики, внешний S3)
 ├── pyproject.toml
 ├── README.md
 └── .gitignore
@@ -189,8 +194,12 @@ docker compose ps
 - `technical-document-web-proxy`;
 - `technical-document-database`;
 - `technical-document-rabbitmq`;
+- `technical-document-minio`;
 - `worker-1`;
 - `worker-2`
+
+Дополнительно при старте отрабатывает одноразовый сервис `technical-document-createbucket` —
+он создаёт bucket и настраивает MinIO (см. раздел «Объектное хранилище») и завершается с кодом 0.
 
 ### 5. Проверить healthcheck приложения
 
@@ -214,6 +223,7 @@ curl https://localhost/health --insecure
 | Web UI (Next.js) | `https://localhost/` | Личный кабинет пользователя |
 | Swagger UI | `https://localhost/docs` | Документация и ручная проверка REST API |
 | RabbitMQ UI | `http://localhost:15672` | Просмотр очередей и сообщений RabbitMQ |
+| MinIO Console | `http://localhost:9001` | Просмотр объектного хранилища (bucket, объекты) |
 | Healthcheck | `https://localhost/health` | Проверка работоспособности приложения |
 
 Доступ к RabbitMQ UI по умолчанию:
@@ -221,6 +231,13 @@ curl https://localhost/health --insecure
 ```text
 login: guest
 password: guest
+```
+
+Доступ к MinIO Console по умолчанию (root, только для локальной разработки):
+
+```text
+login: minioadmin
+password: minioadmin
 ```
 
 ---
@@ -265,7 +282,7 @@ REST API доступен через Swagger UI:
 Сценарий обработки документов реализован асинхронно через RabbitMQ
 `POST /predict` не выполняет обработку синхронно. Вместо этого он:
 1. принимает документы;
-2. сохраняет файлы в `storage/uploads`;
+2. стримит файлы в объектное хранилище (ключи `uploads/<owner_id>/...`);
 3. создает задачу в БД;
 4. ставит задачу в статус `queued`;
 5. публикует сообщение в RabbitMQ;
@@ -290,11 +307,14 @@ Worker:
 
 ## Артефакты обработки
 
-Результаты обработки документов сохраняются в директорию:
+Результаты обработки документов сохраняются в объектное хранилище под ключами:
 
 ```text
-storage/artifacts/<task_id>/
+artifacts/<owner_id>/<task_id>/...
 ```
+
+Артефакты отдаются клиенту потоково через API (`GET /tasks/{task_id}/artifacts/{name}`) —
+само хранилище наружу не публикуется, доступ проверяется на стороне приложения.
 
 Для обработанных документов могут формироваться следующие артефакты:
 
@@ -355,6 +375,38 @@ GET /tasks/{task_id}/result
 
 ---
 
+## Объектное хранилище
+
+Входные документы и артефакты обработки хранятся в S3-совместимом объектном хранилище, а не на
+локальной ФС. Благодаря этому `app` и worker-процессы остаются stateless и могут масштабироваться
+на разные хосты. Локально хранилище поднимается контейнером **MinIO**, в проде используется
+реальный S3 / Yandex Object Storage — код один и тот же, меняются только endpoint и креды.
+
+**Структура ключей** (один bucket `technical-documents`):
+
+```text
+uploads/<owner_id>/<uuid>.<ext>          # входные документы
+artifacts/<owner_id>/<task_id>/...       # артефакты обработки
+```
+
+**Модель доступа.** Хранилище приватное и доступно только внутри docker-сети. Браузер никогда не
+обращается к нему напрямую: загрузка идёт стримом через API, скачивание артефактов — потоково через
+эндпоинт `GET /tasks/{task_id}/artifacts/{name}` с проверкой прав на стороне приложения.
+
+**Provisioning.** Одноразовый сервис `createbucket` (скрипт `minio/provision.sh`, идемпотентный)
+при старте настраивает MinIO под прод-гигиену:
+- отдельный scoped-пользователь с политикой только на bucket (приложение не ходит под root);
+- приватный bucket (публичный доступ закрыт явно);
+- шифрование at-rest (SSE-S3);
+- lifecycle-правило: входные файлы под `uploads/` авто-удаляются через `APP_S3_UPLOADS_RETENTION_DAYS` дней (по умолчанию 7).
+
+**Конфигурация.** Параметры заданы переменными `APP_STORAGE_BACKEND` и `APP_S3_*`
+(см. `app/.env.example`). Бэкенд хранилища выбирается через `APP_STORAGE_BACKEND`:
+`s3` (боевой / локальный MinIO) или `filesystem` (используется тестами). В проде endpoint, креды,
+TLS и retention переопределяются через переменные окружения (см. `docker-compose.prod.yml`).
+
+---
+
 ## Тестирование
 
 **Backend-тесты** (pytest, запускаются внутри контейнера `app`):
@@ -363,9 +415,9 @@ GET /tasks/{task_id}/result
 docker compose run --rm app pytest -q
 ```
 
-Ожидаемый результат: `56 passed`
+Ожидаемый результат: `64 passed`
 
-Тестовый контур включает: доменные операции, пользователей, баланс, историю, REST API, inference-слой, processing-сервис, системные сценарные тесты полного пользовательского пути.
+Тестовый контур включает: доменные операции, пользователей, баланс, историю, REST API, inference-слой, processing-сервис, объектное хранилище, системные сценарные тесты полного пользовательского пути. Тесты гоняются на filesystem-реализации хранилища — запущенный MinIO для них не требуется.
 
 **Frontend-тесты** (Jest + React Testing Library):
 

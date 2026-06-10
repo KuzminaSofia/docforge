@@ -1,3 +1,15 @@
+# Общие настройки object storage для app и воркеров (единый источник).
+# Креды — scoped non-root пользователь (политика только на bucket), НЕ root minioadmin.
+# Для прода переопределяются переменными окружения (реальный S3/Yandex endpoint и креды).
+x-storage-env: &storage-env
+  APP_STORAGE_BACKEND: s3
+  APP_S3_ENDPOINT_URL: http://minio:9000
+  APP_S3_BUCKET: technical-documents
+  APP_S3_ACCESS_KEY: tdms-app
+  APP_S3_SECRET_KEY: tdms-app-secret-change-in-prod
+  APP_S3_REGION: us-east-1
+  APP_S3_USE_SSL: "false"
+
 services:
   migrate:
     build:
@@ -19,20 +31,19 @@ services:
     env_file:
       - ./app/.env
     environment:
-      APP_UPLOADS_DIR: /app/storage/uploads
-      APP_ARTIFACTS_DIR: /app/storage/artifacts
+      <<: *storage-env
     volumes:
       - ./app/src:/app/src
       - ./app/tests:/app/tests
       - ./app/alembic:/app/alembic
       - ./app/alembic.ini:/app/alembic.ini
-      - ./storage/uploads:/app/storage/uploads
-      - ./storage/artifacts:/app/storage/artifacts
     depends_on:
       migrate:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
+      createbucket:
+        condition: service_completed_successfully
 
   worker-1:
     build:
@@ -41,19 +52,18 @@ services:
     env_file:
       - ./app/.env
     environment:
-      APP_UPLOADS_DIR: /app/storage/uploads
-      APP_ARTIFACTS_DIR: /app/storage/artifacts
+      <<: *storage-env
       WORKER_ID: worker-1
     restart: on-failure
     volumes:
       - ./app/src:/app/src:ro
-      - ./storage/uploads:/app/storage/uploads
-      - ./storage/artifacts:/app/storage/artifacts
     depends_on:
       migrate:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
+      createbucket:
+        condition: service_completed_successfully
 
   worker-2:
     build:
@@ -62,19 +72,18 @@ services:
     env_file:
       - ./app/.env
     environment:
-      APP_UPLOADS_DIR: /app/storage/uploads
-      APP_ARTIFACTS_DIR: /app/storage/artifacts
+      <<: *storage-env
       WORKER_ID: worker-2
     restart: on-failure
     volumes:
       - ./app/src:/app/src:ro
-      - ./storage/uploads:/app/storage/uploads
-      - ./storage/artifacts:/app/storage/artifacts
     depends_on:
       migrate:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
+      createbucket:
+        condition: service_completed_successfully
 
   frontend:
     build:
@@ -97,6 +106,42 @@ services:
       - "443:443"
     volumes:
       - tls_certs:/etc/nginx/certs
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    container_name: technical-document-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_KMS_SECRET_KEY: "tdms-key-1:ndjCORv0gOykX+JOiXl1DYfN6yVIVWzqeHPMaYMELW4="
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+
+  createbucket:
+    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    container_name: technical-document-createbucket
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      <<: *storage-env
+      APP_S3_UPLOADS_RETENTION_DAYS: "7"
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    entrypoint: ["/bin/sh", "/provision.sh"]
+    volumes:
+      - ./minio/provision.sh:/provision.sh:ro
+    restart: "no"
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -134,3 +179,4 @@ services:
 volumes:
   postgres_data:
   tls_certs:
+  minio_data:

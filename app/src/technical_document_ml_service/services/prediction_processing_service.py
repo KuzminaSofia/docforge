@@ -28,6 +28,7 @@ from technical_document_ml_service.services.inference_mappers import (
     build_backend_request,
     build_prediction_result_from_backend_result,
 )
+from technical_document_ml_service.services.inference_staging import run_backend_with_staging
 from technical_document_ml_service.services.mappers import (
     model_orm_to_domain,
     orm_to_domain_user,
@@ -208,7 +209,7 @@ def _run_ml_backend(
         backend_config=domain_model.backend_config,
     )
 
-    backend_result = backend_selection.backend.process(backend_request)
+    backend_result = run_backend_with_staging(backend_selection.backend, backend_request)
 
     for warning in backend_result.warnings:
         LOGGER.warning(

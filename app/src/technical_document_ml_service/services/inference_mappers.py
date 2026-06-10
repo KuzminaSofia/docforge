@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -40,7 +39,9 @@ def build_backend_request(
 ) -> BackendRequest:
     """собрать унифицированный backend request для обработки задачи"""
     valid_documents = task.get_valid_documents()
-    artifacts_dir = str(Path(app_settings.artifacts_dir) / str(task.id))
+    # S3-префикс ключей артефактов задачи (а не путь ФС); owner_id дает симметрию с
+    # uploads/<owner_id>/... и позволяет per-user lifecycle/cleanup без похода в БД
+    artifacts_dir = f"{app_settings.artifacts_dir}/{task.user_id}/{task.id}"
 
     return BackendRequest(
         task_id=task.id,

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
 
 def _get_bool_env(name: str, default: bool) -> bool:
@@ -21,6 +20,15 @@ class AppSettings:
     uploads_dir: str
     artifacts_dir: str
     default_prediction_backend: str
+
+    storage_backend: str
+    storage_filesystem_root: str
+    s3_endpoint_url: str
+    s3_bucket: str
+    s3_access_key: str
+    s3_secret_key: str
+    s3_region: str
+    s3_use_ssl: bool
 
     rabbitmq_host: str
     rabbitmq_port: int
@@ -46,16 +54,22 @@ class AppSettings:
 
 def load_app_settings() -> AppSettings:
     """загрузить настройки приложения из переменных окружения"""
-    default_uploads_dir = Path("storage/uploads")
-    default_artifacts_dir = Path("storage/artifacts")
-
+    # трактуются как префиксы ключей object storage (а не пути ФС)
     return AppSettings(
-        uploads_dir=os.getenv("APP_UPLOADS_DIR", str(default_uploads_dir)),
-        artifacts_dir=os.getenv("APP_ARTIFACTS_DIR", str(default_artifacts_dir)),
+        uploads_dir=os.getenv("APP_UPLOADS_DIR", "uploads"),
+        artifacts_dir=os.getenv("APP_ARTIFACTS_DIR", "artifacts"),
         default_prediction_backend=os.getenv(
             "APP_DEFAULT_PREDICTION_BACKEND",
             "docling",
         ),
+        storage_backend=os.getenv("APP_STORAGE_BACKEND", "s3"),
+        storage_filesystem_root=os.getenv("APP_STORAGE_FS_ROOT", "storage"),
+        s3_endpoint_url=os.getenv("APP_S3_ENDPOINT_URL", "http://minio:9000"),
+        s3_bucket=os.getenv("APP_S3_BUCKET", "technical-documents"),
+        s3_access_key=os.getenv("APP_S3_ACCESS_KEY", "minioadmin"),
+        s3_secret_key=os.getenv("APP_S3_SECRET_KEY", "minioadmin"),
+        s3_region=os.getenv("APP_S3_REGION", "us-east-1"),
+        s3_use_ssl=_get_bool_env("APP_S3_USE_SSL", False),
         rabbitmq_host=os.getenv("RABBITMQ_HOST", "rabbitmq"),
         rabbitmq_port=int(os.getenv("RABBITMQ_PORT", "5672")),
         rabbitmq_user=os.getenv("RABBITMQ_USER", "guest"),

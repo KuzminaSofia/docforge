@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from technical_document_ml_service.domain.exceptions import NotFoundError
+from technical_document_ml_service.storage import ObjectNotFoundError, get_object_storage
 
 if TYPE_CHECKING:
     from technical_document_ml_service.services.dto import TaskResultBundle
@@ -17,25 +18,27 @@ MAX_MARKDOWN_PREVIEW_CHARS = 200_000
 
 @dataclass(frozen=True, slots=True)
 class ArtifactFileDescriptor:
-    file_path: Path
+    """ссылка на артефакт в object storage"""
+
+    storage_key: str
     mime_type: str | None
 
 
-def get_task_artifact_file_path(
+def get_task_artifact_descriptor(
     bundle: "TaskResultBundle",
     artifact_name: str,
 ) -> ArtifactFileDescriptor:
-    """найти артефакт задачи по имени и вернуть его путь (защита от path traversal встроена)"""
+    """найти артефакт задачи по имени и вернуть его S3-ключ (защита от traversal встроена)"""
     artifact = next((a for a in bundle.artifacts if a.name == artifact_name), None)
     if artifact is None:
         raise NotFoundError(f"Артефакт '{artifact_name}' не найден.")
 
-    artifacts_dir = bundle.result.artifacts_dir if bundle.result else None
-    file_path = resolve_artifact_path({"path": artifact.path}, artifacts_dir=artifacts_dir)
-    if file_path is None:
+    artifacts_prefix = bundle.result.artifacts_dir if bundle.result else None
+    key = resolve_artifact_key(artifact.path, artifacts_prefix=artifacts_prefix)
+    if key is None:
         raise NotFoundError(f"Файл артефакта '{artifact_name}' недоступен.")
 
-    return ArtifactFileDescriptor(file_path=file_path, mime_type=artifact.mime_type)
+    return ArtifactFileDescriptor(storage_key=key, mime_type=artifact.mime_type)
 
 
 def looks_like_markdown_artifact(artifact: dict[str, Any]) -> bool:
@@ -54,36 +57,27 @@ def looks_like_markdown_artifact(artifact: dict[str, Any]) -> bool:
     )
 
 
-def resolve_artifact_path(
-    artifact: dict[str, Any],
+def resolve_artifact_key(
+    raw_key: Any,
     *,
-    artifacts_dir: str | None,
-) -> Path | None:
-    """восстановить и валидировать путь к артефакту (защита от path traversal)"""
-    raw_path = artifact.get("path")
-    if not raw_path:
+    artifacts_prefix: str | None,
+) -> str | None:
+    """валидировать S3-ключ артефакта (защита от path traversal и выхода за префикс задачи)"""
+    if not raw_key:
         return None
 
-    root = Path(artifacts_dir).resolve() if artifacts_dir else None
-    candidate = Path(str(raw_path))
+    key = str(raw_key)
 
-    if not candidate.is_absolute():
-        if root is None:
+    # отвергаем абсолютные пути и обход каталога
+    if key.startswith("/") or ".." in PurePosixPath(key).parts:
+        return None
+
+    if artifacts_prefix:
+        prefix = artifacts_prefix.rstrip("/")
+        if key != prefix and not key.startswith(prefix + "/"):
             return None
-        candidate = root / candidate
 
-    try:
-        resolved = candidate.resolve()
-    except OSError:
-        return None
-
-    if root is not None and not resolved.is_relative_to(root):
-        return None
-
-    if not resolved.is_file():
-        return None
-
-    return resolved
+    return key
 
 
 def read_markdown_artifact(
@@ -95,20 +89,23 @@ def read_markdown_artifact(
 
     Возвращает dict с ключами: name, path, content, is_truncated — или None.
     """
-    artifacts_dir = result.get("artifacts_dir") if result is not None else None
+    artifacts_prefix = result.get("artifacts_dir") if result is not None else None
+    storage = get_object_storage()
 
     for artifact in artifacts:
         if not looks_like_markdown_artifact(artifact):
             continue
 
-        artifact_path = resolve_artifact_path(artifact, artifacts_dir=artifacts_dir)
-        if artifact_path is None:
+        key = resolve_artifact_key(artifact.get("path"), artifacts_prefix=artifacts_prefix)
+        if key is None:
             continue
 
         try:
-            content = artifact_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            logger.exception("Failed to read markdown artifact: %s", artifact_path)
+            content = storage.get_bytes(key).decode("utf-8", errors="replace")
+        except ObjectNotFoundError:
+            continue
+        except Exception:
+            logger.exception("Failed to read markdown artifact: %s", key)
             continue
 
         is_truncated = len(content) > MAX_MARKDOWN_PREVIEW_CHARS
@@ -119,8 +116,8 @@ def read_markdown_artifact(
             )
 
         return {
-            "name": str(artifact.get("name") or artifact_path.name),
-            "path": str(artifact_path),
+            "name": str(artifact.get("name") or PurePosixPath(key).name),
+            "path": key,
             "content": content,
             "is_truncated": is_truncated,
         }

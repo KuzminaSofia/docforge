@@ -7,6 +7,13 @@
 #   certbot certonly --standalone -d yourdomain.com
 #
 # переменная DOMAIN должна совпадать с именем директории в /etc/letsencrypt/live/
+#
+# Object storage: в production переопределите APP_S3_* переменными окружения на реальный
+# S3 / Yandex Object Storage. Обязательно:
+#   - APP_S3_ENDPOINT_URL=https://… + APP_S3_USE_SSL=true (TLS app↔хранилище);
+#   - APP_S3_ACCESS_KEY/SECRET — scoped креды с политикой только на bucket (не root);
+#   - шифрование at-rest + lifecycle/retention — дефолтными политиками bucket у провайдера.
+
 
 services:
   web-proxy:

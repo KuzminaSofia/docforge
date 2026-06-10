@@ -65,6 +65,11 @@ def test_process_document_prediction_task_completes_and_persists_result(
         prediction_result = prediction_results[0]
         assert prediction_result.output_file_path is not None
         assert prediction_result.artifacts_dir is not None
+        # ключи артефактов симметричны uploads: artifacts/<owner_id>/<task_id>/...
+        assert prediction_result.artifacts_dir == f"artifacts/{api_user.id}/{submission.task_id}"
+        assert prediction_result.artifacts_manifest[0]["path"].startswith(
+            f"artifacts/{api_user.id}/{submission.task_id}/"
+        )
         assert len(prediction_result.artifacts_manifest) >= 1
 
         assert transactions_count == 1
