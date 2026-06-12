@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -131,6 +131,8 @@ export function TaskDetailClient({ taskId, initial }: Props) {
               content={markdownContent}
               loading={markdownLoading}
               hasArtifacts={data.artifacts.length > 0}
+              taskId={taskId}
+              artifacts={data.artifacts}
             />
           )}
         </div>
@@ -248,12 +250,47 @@ function MarkdownPanel({
   content,
   loading,
   hasArtifacts,
+  taskId,
+  artifacts,
 }: {
   content: string | null;
   loading: boolean;
   hasArtifacts: boolean;
+  taskId: string;
+  artifacts: TaskResultResponse["artifacts"];
 }) {
   const [view, setView] = useState<"rendered" | "raw">("rendered");
+
+  // ссылка в markdown (например ![](_page_0_Figure_1.jpeg)) указывает на оригинальное
+  // имя картинки Datalab; артефакт хранится под другим именем. metadata.source_name
+  // хранит оригинал — строим из него карту: исходная ссылка → скачиваемое имя артефакта.
+  const imageHref = useMemo(() => {
+    const byRef = new Map<string, string>();
+    for (const a of artifacts) {
+      if (a.kind !== "image") continue;
+      const source = a.metadata?.source_name;
+      if (typeof source === "string") byRef.set(source, a.name);
+      byRef.set(a.name, a.name);
+    }
+    return (src: string): string | null => {
+      const leaf = src.split("/").pop() ?? src;
+      const name = byRef.get(src) ?? byRef.get(leaf);
+      if (!name) return null;
+      return `/api/tasks/${taskId}/artifacts/${encodeURIComponent(name)}`;
+    };
+  }, [artifacts, taskId]);
+
+  const markdownComponents = useMemo(
+    () => ({
+      img: ({ src, alt }: { src?: string | Blob; alt?: string }) => {
+        const resolved = typeof src === "string" ? imageHref(src) : null;
+        if (!resolved) return null;
+        // eslint-disable-next-line @next/next/no-img-element
+        return <img src={resolved} alt={alt ?? ""} className="max-w-full rounded-md my-2" />;
+      },
+    }),
+    [imageHref],
+  );
 
   if (loading) {
     return (
@@ -295,7 +332,7 @@ function MarkdownPanel({
       </div>
       {view === "rendered" ? (
         <div className="overflow-auto p-4 min-h-0 text-sm text-foreground leading-relaxed [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-3 [&_h2]:text-lg [&_h2]:font-semibold [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mb-1.5 [&_p]:mb-2 [&_ul]:mb-2 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:mb-2 [&_ol]:pl-5 [&_ol]:list-decimal [&_li]:mb-0.5 [&_strong]:font-semibold [&_em]:italic [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-xs [&_code]:font-mono [&_pre]:bg-muted [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre]:mb-2 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_table]:w-full [&_table]:border-collapse [&_table]:mb-2 [&_th]:border [&_th]:border-border [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1 [&_th]:text-left [&_th]:text-xs [&_th]:font-medium [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_td]:text-xs [&_hr]:border-border [&_hr]:my-3">
-          <ReactMarkdown>{content}</ReactMarkdown>
+          <ReactMarkdown components={markdownComponents}>{content}</ReactMarkdown>
         </div>
       ) : (
         <pre className="overflow-auto p-4 text-xs text-foreground font-mono whitespace-pre-wrap leading-relaxed min-h-0">

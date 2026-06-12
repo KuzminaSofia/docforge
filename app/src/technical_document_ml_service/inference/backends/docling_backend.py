@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import json
 import logging
-import re
 import shutil
 from pathlib import Path
 from typing import Any
 
+from technical_document_ml_service.inference.backends._artifact_io import (
+    sanitize_stem as _sanitize_stem,
+    save_json as _save_json,
+)
 from technical_document_ml_service.inference.backends.base import PredictionBackend
 from technical_document_ml_service.inference.contracts import (
     BackendArtifact,
@@ -25,35 +27,6 @@ def _load_document_converter_cls():
     from docling.document_converter import DocumentConverter
 
     return DocumentConverter
-
-
-def _to_jsonable(obj: Any):
-    """преобразовать произвольный объект в JSON-сериализуемый вид"""
-    if isinstance(obj, (str, int, float, bool)) or obj is None:
-        return obj
-    if isinstance(obj, dict):
-        return {str(k): _to_jsonable(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple, set)):
-        return [_to_jsonable(x) for x in obj]
-    if callable(obj):
-        return f"<callable:{getattr(obj, '__name__', type(obj).__name__)}>"
-    return str(obj)
-
-
-def _save_json(path: Path, data: Any) -> None:
-    """сохранить данные в JSON-файл"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(_to_jsonable(data), ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-
-
-def _sanitize_stem(filename: str) -> str:
-    """безопасно нормализовать stem имени файла для каталога/артефактов"""
-    raw_stem = Path(filename).stem or "document"
-    normalized = re.sub(r"[^A-Za-z0-9._-]+", "_", raw_stem).strip("._")
-    return normalized or "document"
 
 
 def _convert_document(

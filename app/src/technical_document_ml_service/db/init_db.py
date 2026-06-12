@@ -11,6 +11,7 @@ from technical_document_ml_service.core.security import (
 )
 from technical_document_ml_service.domain.enums import DocumentType, UserRole
 from technical_document_ml_service.inference.registry import (
+    DATALAB_BACKEND_NAME,
     DOCLING_BACKEND_NAME,
     TECHNICAL_DOCUMENT_MODEL_KIND,
 )
@@ -123,6 +124,16 @@ def seed_initial_data(session: Session) -> None:
         supported_document_types=[DocumentType.UNKNOWN.value],
         backend_name=DOCLING_BACKEND_NAME,
         backend_config={},
+    )
+    _ensure_model(
+        session,
+        name="technical-document-extractor-datalab",
+        description="Извлечение данных через облачный Datalab convert API (Markdown + изображения)",
+        prediction_cost=Decimal("15.00"),
+        model_kind=TECHNICAL_DOCUMENT_MODEL_KIND,
+        supported_document_types=[DocumentType.UNKNOWN.value],
+        backend_name=DATALAB_BACKEND_NAME,
+        backend_config={"mode": "fast"},
     )
 
 

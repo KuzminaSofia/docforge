@@ -4,6 +4,9 @@ from collections.abc import Callable
 from typing import Any
 
 from technical_document_ml_service.inference.backends.base import PredictionBackend
+from technical_document_ml_service.inference.backends.datalab_backend import (
+    create_datalab_backend,
+)
 from technical_document_ml_service.inference.backends.docling_backend import (
     create_docling_backend,
 )
@@ -59,6 +62,7 @@ class BackendRegistry:
 
 
 DOCLING_BACKEND_NAME = "docling"
+DATALAB_BACKEND_NAME = "datalab"
 TECHNICAL_DOCUMENT_MODEL_KIND = "technical_document_extraction"
 
 
@@ -66,6 +70,7 @@ def build_default_backend_registry() -> BackendRegistry:
     """создать реестр со стандартными backend-ами приложения"""
     registry = BackendRegistry()
     registry.register(name=DOCLING_BACKEND_NAME, factory=create_docling_backend)
+    registry.register(name=DATALAB_BACKEND_NAME, factory=create_datalab_backend)
     return registry
 
 
