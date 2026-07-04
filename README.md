@@ -463,4 +463,3 @@ docker compose up -d --build
 
 Дополнительно можно открыть RabbitMQ UI и убедиться, что задачи проходят через очередь:
 `http://localhost:15672` (RabbitMQ UI работает на HTTP — без HTTPS)
-

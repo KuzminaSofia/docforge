@@ -7,10 +7,24 @@ from technical_document_ml_service.inference.registry import build_default_backe
 from technical_document_ml_service.inference.selector import select_prediction_backend
 
 
-def test_default_backend_registry_contains_docling() -> None:
+def test_default_backend_registry_contains_docling_and_datalab() -> None:
     registry = build_default_backend_registry()
 
-    assert registry.names() == ("docling",)
+    assert registry.names() == ("datalab", "docling")
+
+
+def test_select_prediction_backend_resolves_datalab() -> None:
+    registry = build_default_backend_registry()
+
+    selection = select_prediction_backend(
+        requested_backend_name="datalab",
+        backend_config={"mode": "fast"},
+        registry=registry,
+        default_backend_name="docling",
+    )
+
+    assert selection.resolved_backend_name == "datalab"
+    assert selection.backend.name == "datalab"
 
 
 def test_select_prediction_backend_uses_docling_by_default() -> None:

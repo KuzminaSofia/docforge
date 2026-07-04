@@ -7,9 +7,18 @@ from technical_document_ml_service.inference.contracts import BackendRequest, Ba
 
 
 class PredictionBackend(ABC):
-    """базовый интерфейс backend-обработчика"""
+    """базовый интерфейс backend-обработчика
+
+    Бэкенды бывают двух типов:
+    - синхронные (локальный счёт, напр. Docling): реализуют только `process()`;
+    - удалённые/async (`is_remote=True`, напр. Datalab): дополнительно реализуют
+      `submit()` + `fetch()`, чтобы воркер не блокировал слот на ожидании.
+      `process()` у них = синхронная композиция submit+fetch (для sync-вызовов/тестов).
+    """
 
     backend_name: str | None = None
+    # удалённый backend: долгий счёт идёт на чужой стороне, обработка двухфазная
+    is_remote: bool = False
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -33,5 +42,24 @@ class PredictionBackend(ABC):
 
     @abstractmethod
     def process(self, request: BackendRequest) -> BackendResult:
-        """выполнить обработку запроса"""
+        """выполнить обработку запроса (синхронно, до получения результата)"""
         raise NotImplementedError
+
+    def submit(self, request: BackendRequest) -> dict[str, Any]:
+        """фаза 1 (только remote): запустить удалённую задачу, вернуть handle (JSON)"""
+        raise NotImplementedError(
+            f"submit() поддерживается только remote-backend'ами (is_remote=True); "
+            f"{type(self).__name__} синхронный."
+        )
+
+    def fetch(
+        self, request: BackendRequest, handle: dict[str, Any]
+    ) -> BackendResult | None:
+        """фаза 2 (только remote): опросить результат по handle
+
+        Возвращает BackendResult когда задача готова, либо None если ещё считается.
+        """
+        raise NotImplementedError(
+            f"fetch() поддерживается только remote-backend'ами (is_remote=True); "
+            f"{type(self).__name__} синхронный."
+        )

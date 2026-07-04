@@ -7,6 +7,7 @@ export type TaskStatus =
   | "queued"
   | "validating"
   | "processing"
+  | "awaiting_backend"
   | "completed"
   | "failed";
 

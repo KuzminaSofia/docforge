@@ -17,7 +17,17 @@ class TaskStatus(str, Enum):
     QUEUED = "queued"
     VALIDATING = "validating"
     PROCESSING = "processing"
+    # submit в удалённый backend выполнен, ждём результат (reconciler допокажет задачу)
+    AWAITING_BACKEND = "awaiting_backend"
     COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class RemoteJobStatus(str, Enum):
+    """статусы удалённой inference-задачи (checkpoint для poll'инга)"""
+
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
     FAILED = "failed"
 
 

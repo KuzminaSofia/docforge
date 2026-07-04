@@ -1,0 +1,8 @@
+# Оффлайн-бенчмарк (research/). НЕ ставится в образ сервиса.
+numpy==2.2.1
+tiktoken==0.8.0
+requests==2.32.3
+
+# Локальные эмбеддинги (--provider local, multilingual-e5-large). Тянет torch —
+# ставить только на машине, где гоняется retrieval. Для Voyage/OpenAI не нужно.
+sentence-transformers==3.3.1
