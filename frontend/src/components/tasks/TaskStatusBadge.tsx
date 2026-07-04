@@ -18,6 +18,10 @@ const STATUS_CONFIG: Record<TaskStatus, { label: string; className: string }> = 
     label: "Обработка",
     className: "bg-indigo-100 text-indigo-800",
   },
+  awaiting_backend: {
+    label: "Ожидание результата",
+    className: "bg-violet-100 text-violet-800",
+  },
   completed: {
     label: "Выполнена",
     className: "bg-green-100 text-green-800",

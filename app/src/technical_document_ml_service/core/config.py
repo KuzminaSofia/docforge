@@ -50,6 +50,7 @@ class AppSettings:
     worker_task_timeout_seconds: int
 
     outbox_poll_interval_seconds: int
+    remote_reconcile_interval_seconds: int
 
 
 def load_app_settings() -> AppSettings:
@@ -95,6 +96,9 @@ def load_app_settings() -> AppSettings:
         worker_reconnect_delay_seconds=int(os.getenv("WORKER_RECONNECT_DELAY_SECONDS", "5")),
         worker_task_timeout_seconds=int(os.getenv("WORKER_TASK_TIMEOUT_SECONDS", "600")),
         outbox_poll_interval_seconds=int(os.getenv("APP_OUTBOX_POLL_INTERVAL_SECONDS", "60")),
+        remote_reconcile_interval_seconds=int(
+            os.getenv("APP_REMOTE_RECONCILE_INTERVAL_SECONDS", "5")
+        ),
     )
 
 

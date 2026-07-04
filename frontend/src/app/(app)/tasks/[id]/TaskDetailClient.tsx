@@ -26,6 +26,8 @@ const STATUS_ORDER: Record<TaskStatus, number> = {
   queued: 1,
   validating: 2,
   processing: 3,
+  // под-стадия обработки (ожидание удалённого backend) — тот же шаг степпера
+  awaiting_backend: 3,
   completed: 4,
   failed: 4,
 };

@@ -28,6 +28,15 @@ def _build_backend_document(document) -> BackendDocument:
     )
 
 
+def build_artifacts_prefix(*, user_id: UUID, task_id: UUID) -> str:
+    """S3-префикс ключей артефактов задачи (не путь ФС)
+
+    owner_id дает симметрию с uploads/<owner_id>/... и позволяет per-user
+    lifecycle/cleanup без похода в БД. Единый источник для submit и finalize.
+    """
+    return f"{app_settings.artifacts_dir}/{user_id}/{task_id}"
+
+
 def build_backend_request(
     *,
     task: DocumentExtractionTask,
@@ -39,9 +48,7 @@ def build_backend_request(
 ) -> BackendRequest:
     """собрать унифицированный backend request для обработки задачи"""
     valid_documents = task.get_valid_documents()
-    # S3-префикс ключей артефактов задачи (а не путь ФС); owner_id дает симметрию с
-    # uploads/<owner_id>/... и позволяет per-user lifecycle/cleanup без похода в БД
-    artifacts_dir = f"{app_settings.artifacts_dir}/{task.user_id}/{task.id}"
+    artifacts_dir = build_artifacts_prefix(user_id=task.user_id, task_id=task.id)
 
     return BackendRequest(
         task_id=task.id,

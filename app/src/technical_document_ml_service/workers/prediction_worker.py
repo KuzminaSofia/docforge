@@ -10,6 +10,7 @@ import pika
 
 from technical_document_ml_service.core.config import app_settings
 from technical_document_ml_service.db.session import SessionLocal
+from technical_document_ml_service.services.remote_job_reconciler import RemoteJobReconciler
 from technical_document_ml_service.workers.webhook_consumer import run_webhook_consumer_loop
 from technical_document_ml_service.domain.exceptions import NotFoundError
 from technical_document_ml_service.messaging.contracts import PredictionTaskMessage
@@ -215,6 +216,12 @@ def run_prediction_worker() -> None:
         daemon=True,
     )
     webhook_thread.start()
+
+    # reconciler опрашивает remote-задачи (Datalab и т.п.) off-slot, не блокируя воркер
+    reconciler = RemoteJobReconciler(
+        poll_interval=app_settings.remote_reconcile_interval_seconds
+    )
+    reconciler.start()
 
     worker_id = app_settings.worker_id
     reconnect_delay_seconds = app_settings.worker_reconnect_delay_seconds

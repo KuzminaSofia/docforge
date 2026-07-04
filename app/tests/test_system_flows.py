@@ -272,6 +272,8 @@ def test_predict_with_insufficient_balance_preserves_user_state(
 
 
 class _CrashingBackend:
+    is_remote = False
+
     def process(self, request):
         raise RuntimeError("backend crashed in test")
 

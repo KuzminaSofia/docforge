@@ -464,3 +464,57 @@ docker compose up -d --build
 Дополнительно можно открыть RabbitMQ UI и убедиться, что задачи проходят через очередь:
 `http://localhost:15672` (RabbitMQ UI работает на HTTP — без HTTPS)
 
+
+
+Чисто — оставшиеся совпадения это собственные методы Docling (не тронуты) и имена тест-функций. Реализация завершена.
+
+  Фазы 2–4 готовы: сервис обрабатывает remote-бэкенды асинхронно (off-slot)
+
+  Итог тестов: backend 91 passed, frontend 29 passed, tsc чистый.
+
+  Как теперь работает Datalab (и любой будущий remote-бэкенд)
+
+  Воркер (задача QUEUED):
+    validate → submit в Datalab → сохранить checkpoint (remote_inference_jobs, PENDING)
+             → статус AWAITING_BACKEND → ACK.  Слот воркера свободен. Баланс НЕ списан.
+
+  RemoteJobReconciler (фоновый поток в воркере, каждые 5с):
+    скан PENDING-задач (SKIP LOCKED) → один быстрый GET к Datalab:
+      ещё считается → оставить PENDING (слот не занят, ждём след. тик)
+      готово        → артефакты в S3 → списать баланс → COMPLETED → webhook
+      дедлайн (30м) → FAILED → webhook
+
+  Docling (is_remote=False) идёт прежним синхронным путём — не тронут.
+
+  Изменения по фазам
+
+  Контракт (Фаза 2):
+  - backends/base.py — is_remote + submit()/fetch() в контракте.
+  - datalab_backend.py — process теперь = композиция submit+fetch; DatalabClient похудел до submit+check (без блокирующего poll).
+  - inference_staging.py — submit_with_staging / fetch_with_staging.
+
+  Processing (Фаза 2/3):
+  - prediction_processing_service.py — _execute_prediction ветвится sync/remote; вынесен идемпотентный finalize_prediction (общий для sync-пути и reconciler'а);
+  добавлены _start_remote_prediction, reconcile_remote_job; webhook для AWAITING не шлётся.
+  - inference_mappers.py — build_artifacts_prefix (единый источник S3-префикса).
+  
+  Reconciler (Фаза 3):
+  - services/remote_job_reconciler.py — поток по образцу OutboxRelay, запускается в run_prediction_worker.
+  - core/config.py + .env.example — APP_REMOTE_RECONCILE_INTERVAL_SECONDS (дефолт 5).
+
+  Фронт (Фаза 4):
+  - awaiting_backend в типе, бейдже («Ожидание результата»), STATUS_ORDER. SSE и так шлёт его как промежуточный status (терминальные — только COMPLETED/FAILED).
+  
+  Тесты: test_remote_reconciler.py — submit→AWAITING→reconcile→COMPLETED, идемпотентность, дедлайн→FAILED.
+
+  Чтобы запустить у себя
+
+  docker compose up -d --build      # пересобирает migrate (0003) + воркеры (новый код с reconciler'ом)
+  Запущенные сейчас воркеры держат старый код (модули загружены при старте) — обязательно пересобрать/перезапустить, иначе reconciler не работает.
+  
+  Что осознанно НЕ делали (отложено)
+
+  - Внешний webhook Datalab (webhook_url) — нужен публичный endpoint + подпись + туннель для локалки; reconciler даёт тот же эффект без этого.
+  - Раздельные очереди/образы по бэкенду — нужно только при масштабировании Docling (ты против).
+
+  Коммитить не буду — за тобой. Хочешь, прогоню живой e2e через поднятый стек (реальная задача на Datalab → AWAITING → reconciler → COMPLETED)?

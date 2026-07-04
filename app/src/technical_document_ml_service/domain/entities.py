@@ -549,6 +549,14 @@ class MLTask(BaseEntity, ABC):
         if self._started_at is None:
             self._started_at = datetime.now(UTC)
 
+    def mark_as_awaiting_backend(self) -> None:
+        """перевести задачу в ожидание результата удалённого backend (submit выполнен)"""
+        if self._status != TaskStatus.PROCESSING:
+            raise TaskExecutionError(
+                "В ожидание удалённого backend можно перевести только задачу в обработке."
+            )
+        self._status = TaskStatus.AWAITING_BACKEND
+
     def mark_as_completed(
         self,
         *,
@@ -556,9 +564,13 @@ class MLTask(BaseEntity, ABC):
         spent_credits: Decimal,
     ) -> None:
         """завершить задачу успешно"""
-        if self._status not in {TaskStatus.PROCESSING, TaskStatus.VALIDATING}:
+        if self._status not in {
+            TaskStatus.PROCESSING,
+            TaskStatus.VALIDATING,
+            TaskStatus.AWAITING_BACKEND,
+        }:
             raise TaskExecutionError(
-                "Завершить можно только задачу, находящуюся в обработке."
+                "Завершить можно только задачу в обработке или ожидании backend."
             )
 
         self._status = TaskStatus.COMPLETED

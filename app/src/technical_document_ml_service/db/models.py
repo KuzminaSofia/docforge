@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Table,
@@ -211,6 +212,12 @@ class MLTaskORM(Base):
         cascade="all, delete-orphan",
         single_parent=True,
     )
+    remote_inference_job: Mapped["MLRemoteInferenceJobORM | None"] = relationship(
+        back_populates="task",
+        uselist=False,
+        cascade="all, delete-orphan",
+        single_parent=True,
+    )
     documents: Mapped[list["UploadedDocumentORM"]] = relationship(
         secondary=task_documents,
         back_populates="tasks",
@@ -359,6 +366,65 @@ class OutboxEventORM(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+
+
+class MLRemoteInferenceJobORM(Base):
+    """checkpoint удалённой inference-задачи для неблокирующего poll'инга reconciler'ом
+
+    Создаётся, когда remote-backend (например Datalab) принял документ и вернул
+    handle (`request_check_url`); reconciler опрашивает её off-slot и допокажет
+    задачу. Одна задача — одна remote-job.
+    """
+
+    __tablename__ = "remote_inference_jobs"
+    __table_args__ = (
+        Index(
+            "ix_remote_inference_jobs_pending",
+            "created_at",
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey("ml_tasks.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    backend_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    # handle удалённой задачи: {request_check_url, request_id, ...}
+    handle: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+    )
+    attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+    # после этого момента poll прекращается, задача помечается FAILED по таймауту
+    deadline_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    task: Mapped["MLTaskORM"] = relationship(back_populates="remote_inference_job")
 
 
 class MLRequestHistoryORM(Base):

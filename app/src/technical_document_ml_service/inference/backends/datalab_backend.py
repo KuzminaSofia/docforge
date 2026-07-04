@@ -60,21 +60,21 @@ def _safe_image_name(name: str) -> str:
 
 
 class DatalabClient:
-    """тонкий HTTP-клиент Datalab convert API (submit + poll)"""
+    """тонкий HTTP-клиент Datalab convert API: submit + одиночный check
+
+    Клиент не содержит блокирующего ожидания — каденс опроса задаёт вызывающий
+    (backend.process для sync-пути / reconciler для async-пути).
+    """
 
     def __init__(
         self,
         *,
         api_key: str,
         api_base: str,
-        poll_interval_s: int = _DEFAULT_POLL_INTERVAL_S,
-        poll_timeout_s: int = _DEFAULT_POLL_TIMEOUT_S,
         submit_timeout_s: int = _DEFAULT_SUBMIT_TIMEOUT_S,
     ) -> None:
         self._api_key = api_key
         self._convert_url = f"{api_base.rstrip('/')}/convert"
-        self._poll_interval_s = poll_interval_s
-        self._poll_timeout_s = poll_timeout_s
         self._submit_timeout_s = submit_timeout_s
 
     @property
@@ -147,49 +147,20 @@ class DatalabClient:
             )
         return check_url
 
-    def poll(self, check_url: str) -> dict[str, Any]:
-        """опрашивать до завершения конвертации, вернуть финальный JSON результата"""
+    def check(self, check_url: str) -> dict[str, Any]:
+        """один запрос статуса/результата удалённой задачи (без блокирующего ожидания)
+
+        Возвращает тело ответа Datalab как есть; статус (`status`, `success`)
+        интерпретирует вызывающий.
+        """
         requests = _load_requests()
-        deadline = time.monotonic() + self._poll_timeout_s
-
-        while True:
-            response = requests.get(
-                check_url,
-                headers=self._headers,
-                timeout=self._submit_timeout_s,
-            )
-            self._check_status(response, action="ошибка при опросе результата (poll)")
-            body = response.json()
-            status = body.get("status")
-
-            if status == "complete":
-                if not body.get("success"):
-                    raise BackendExecutionError(
-                        f"Datalab завершил конвертацию с ошибкой: "
-                        f"{body.get('error') or 'unknown error'}"
-                    )
-                return body
-
-            if time.monotonic() > deadline:
-                raise BackendExecutionError(
-                    f"Datalab не завершил обработку за {self._poll_timeout_s}s "
-                    f"(последний статус: {status})."
-                )
-
-            time.sleep(self._poll_interval_s)
-
-    def convert(
-        self,
-        *,
-        file_path: Path,
-        options: dict[str, Any],
-        content_type: str | None = None,
-    ) -> dict[str, Any]:
-        """полный цикл: submit -> poll -> результат"""
-        check_url = self.submit(
-            file_path=file_path, options=options, content_type=content_type
+        response = requests.get(
+            check_url,
+            headers=self._headers,
+            timeout=self._submit_timeout_s,
         )
-        return self.poll(check_url)
+        self._check_status(response, action="ошибка при опросе результата (check)")
+        return response.json()
 
 
 def _decode_images(
@@ -217,9 +188,10 @@ def _decode_images(
 
 
 class DatalabBackend(PredictionBackend):
-    """backend обработки на основе Datalab convert API"""
+    """backend обработки на основе Datalab convert API (remote/async)"""
 
     backend_name = "datalab"
+    is_remote = True
 
     def _resolve_api_key(self) -> str | None:
         """разрешить ключ: config.api_key -> env по config.api_key_env -> env по умолчанию"""
@@ -265,37 +237,172 @@ class DatalabBackend(PredictionBackend):
         return DatalabClient(
             api_key=api_key,
             api_base=str(config.get("api_base") or _DEFAULT_API_BASE),
-            poll_interval_s=self._int_config("poll_interval_s", _DEFAULT_POLL_INTERVAL_S),
-            poll_timeout_s=self._int_config("poll_timeout_s", _DEFAULT_POLL_TIMEOUT_S),
             submit_timeout_s=self._int_config("submit_timeout_s", _DEFAULT_SUBMIT_TIMEOUT_S),
         )
 
+    def _poll_params(self) -> tuple[int, int]:
+        """каденс опроса для синхронного process(): (interval_s, timeout_s)"""
+        return (
+            self._int_config("poll_interval_s", _DEFAULT_POLL_INTERVAL_S),
+            self._int_config("poll_timeout_s", _DEFAULT_POLL_TIMEOUT_S),
+        )
+
     def process(self, request: BackendRequest) -> BackendResult:
-        """выполнить обработку через Datalab convert API"""
+        """синхронная обработка: submit + опрос fetch до готовности (для sync-вызовов/тестов)"""
+        handle = self.submit(request)
+
+        result = self.fetch(request, handle)
+        if result is not None:
+            return result
+
+        poll_interval_s, poll_timeout_s = self._poll_params()
+        deadline = time.monotonic() + poll_timeout_s
+        while True:
+            if time.monotonic() > deadline:
+                raise BackendExecutionError(
+                    f"Datalab не завершил обработку за {poll_timeout_s}s."
+                )
+            time.sleep(poll_interval_s)
+            result = self.fetch(request, handle)
+            if result is not None:
+                return result
+
+    def submit(self, request: BackendRequest) -> dict[str, Any]:
+        """фаза 1: отправить каждый документ в Datalab, вернуть handle с check-url'ами"""
+        client, mode_label, warnings = self._init_client(request)
+        options = self._build_options()
+
+        documents_handle: list[dict[str, Any]] = []
+        for document in request.documents:
+            entry: dict[str, Any] = {
+                "document_id": str(document.document_id),
+                "original_filename": document.original_filename,
+            }
+            if client is None:
+                entry["stub"] = True
+            else:
+                entry["check_url"] = client.submit(
+                    file_path=document.path,
+                    options=options,
+                    content_type=document.mime_type or None,
+                )
+            documents_handle.append(entry)
+
+        return {
+            "mode_label": mode_label,
+            "datalab_mode": options["mode"],
+            "warnings": warnings,
+            "documents": documents_handle,
+        }
+
+    def fetch(
+        self, request: BackendRequest, handle: dict[str, Any]
+    ) -> BackendResult | None:
+        """фаза 2: опросить каждый документ; собрать результат, когда готовы все"""
+        documents_handle = handle.get("documents", [])
+        client = None
+        if not all(entry.get("stub") for entry in documents_handle):
+            client = self._build_client(self._require_api_key())
+
+        raw_by_doc_id: dict[str, dict[str, Any]] = {}
+        for entry in documents_handle:
+            if entry.get("stub"):
+                raw_by_doc_id[entry["document_id"]] = self._stub_raw(
+                    entry.get("original_filename", "document")
+                )
+                continue
+
+            body = client.check(entry["check_url"])
+            if body.get("status") != "complete":
+                return None  # ещё считается — reconciler опросит позже
+            if not body.get("success"):
+                raise BackendExecutionError(
+                    f"Datalab завершил конвертацию с ошибкой: "
+                    f"{body.get('error') or 'unknown error'}"
+                )
+            raw_by_doc_id[entry["document_id"]] = body
+
+        return self._assemble_result(request, handle, raw_by_doc_id)
+
+    def _require_api_key(self) -> str:
+        """вернуть API key или поднять ошибку (для fetch не-stub задач)"""
+        api_key = self._resolve_api_key()
+        if not api_key:
+            raise BackendExecutionError(
+                f"Не задан Datalab API key для опроса результата (env {_DEFAULT_API_KEY_ENV})."
+            )
+        return api_key
+
+    @staticmethod
+    def _stub_raw(original_filename: str) -> dict[str, Any]:
+        """сформировать stub-ответ Datalab для одного документа"""
+        stub_md = (
+            f"# {original_filename}\n\n"
+            "Datalab API key недоступен в текущем окружении. "
+            "Сформирован stub-результат."
+        )
+        return {
+            "status": "complete",
+            "success": True,
+            "markdown": stub_md,
+            "images": {},
+            "page_count": 0,
+            "mode": "stub_fallback",
+        }
+
+    def _assemble_result(
+        self,
+        request: BackendRequest,
+        handle: dict[str, Any],
+        raw_by_doc_id: dict[str, dict[str, Any]],
+    ) -> BackendResult:
+        """собрать артефакты и BackendResult из готовых ответов Datalab"""
         task_artifacts_dir = Path(request.artifacts_dir)
         task_artifacts_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            client, mode_label, warnings = self._init_client(request)
-            options = self._build_options()
+            documents_by_id = {str(d.document_id): d for d in request.documents}
+            mode_label = handle.get("mode_label", "datalab")
+            warnings = list(handle.get("warnings", []))
+            options = {"mode": handle.get("datalab_mode", _DEFAULT_MODE)}
 
             artifacts: list[BackendArtifact] = []
             extracted_data: dict[str, Any] = {}
             documents_summary: list[dict[str, Any]] = []
 
-            for index, document in enumerate(request.documents, start=1):
-                doc_artifacts, extracted_entry, summary_entry = self._process_document(
-                    index, document, task_artifacts_dir, request, client, options
+            for index, entry in enumerate(handle.get("documents", []), start=1):
+                document = documents_by_id[entry["document_id"]]
+                raw_result = raw_by_doc_id[entry["document_id"]]
+                markdown = raw_result.get("markdown") or ""
+                mode = "stub_fallback" if entry.get("stub") else "datalab"
+                safe_stem = _sanitize_stem(document.original_filename)
+                doc_dir = (
+                    task_artifacts_dir
+                    / f"{index:02d}_{safe_stem}_{str(document.document_id)[:8]}"
+                )
+                doc_dir.mkdir(parents=True, exist_ok=True)
+
+                doc_artifacts, extracted_entry, summary_entry = (
+                    self._materialize_document_outputs(
+                        doc_dir=doc_dir,
+                        safe_stem=safe_stem,
+                        markdown=markdown,
+                        raw_result=raw_result,
+                        document=document,
+                        request=request,
+                        mode=mode,
+                    )
                 )
                 artifacts.extend(doc_artifacts)
                 extracted_data[document.original_filename] = extracted_entry
                 documents_summary.append(summary_entry)
 
             task_summary_path = task_artifacts_dir / "task.summary.json"
-            task_artifact = self._save_task_summary(
-                task_summary_path, request, mode_label, options, warnings, documents_summary
+            artifacts.append(
+                self._save_task_summary(
+                    task_summary_path, request, mode_label, options, warnings, documents_summary
+                )
             )
-            artifacts.append(task_artifact)
 
             return BackendResult(
                 extracted_data=extracted_data,
@@ -339,74 +446,6 @@ class DatalabBackend(PredictionBackend):
             "task_id=%s | backend=%s | %s", request.task_id, self.name, warning_message
         )
         return None, "stub_fallback", warnings
-
-    def _process_document(
-        self,
-        index: int,
-        document: BackendDocument,
-        task_artifacts_dir: Path,
-        request: BackendRequest,
-        client: DatalabClient | None,
-        options: dict[str, Any],
-    ) -> tuple[list[BackendArtifact], dict[str, Any], dict[str, Any]]:
-        """обработать один документ; вернуть (artifacts, extracted_entry, summary_entry)"""
-        safe_stem = _sanitize_stem(document.original_filename)
-        doc_dir = (
-            task_artifacts_dir
-            / f"{index:02d}_{safe_stem}_{str(document.document_id)[:8]}"
-        )
-        doc_dir.mkdir(parents=True, exist_ok=True)
-
-        markdown, raw_result, mode = self._convert_document(client, document, options)
-
-        return self._materialize_document_outputs(
-            doc_dir=doc_dir,
-            safe_stem=safe_stem,
-            markdown=markdown,
-            raw_result=raw_result,
-            document=document,
-            request=request,
-            mode=mode,
-        )
-
-    def _convert_document(
-        self,
-        client: DatalabClient | None,
-        document: BackendDocument,
-        options: dict[str, Any],
-    ) -> tuple[str, dict[str, Any], str]:
-        """вызвать Datalab или stub; вернуть (markdown, raw_result, mode)"""
-        if client is None:
-            stub_md = (
-                f"# {document.original_filename}\n\n"
-                "Datalab API key недоступен в текущем окружении. "
-                "Сформирован stub-результат."
-            )
-            stub_result = {
-                "status": "complete",
-                "success": True,
-                "markdown": stub_md,
-                "images": {},
-                "page_count": 0,
-                "mode": "stub_fallback",
-            }
-            return stub_md, stub_result, "stub_fallback"
-
-        try:
-            result = client.convert(
-                file_path=document.path,
-                options=options,
-                content_type=document.mime_type or None,
-            )
-        except BackendExecutionError:
-            raise
-        except Exception as exc:
-            raise BackendExecutionError(
-                f"Ошибка Datalab при обработке файла '{document.original_filename}': {exc}"
-            ) from exc
-
-        markdown = result.get("markdown") or ""
-        return markdown, result, "datalab"
 
     def _materialize_document_outputs(
         self,

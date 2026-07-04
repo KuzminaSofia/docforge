@@ -7,6 +7,7 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   queued: "В очереди",
   validating: "Проверяется",
   processing: "Обработка",
+  awaiting_backend: "Ожидание результата",
   completed: "Выполнена",
   failed: "Ошибка",
 };

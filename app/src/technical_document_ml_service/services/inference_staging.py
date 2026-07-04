@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
-from typing import Iterator
+from typing import Any, Iterator
 
 from technical_document_ml_service.inference.backends.base import PredictionBackend
 from technical_document_ml_service.inference.contracts import BackendRequest, BackendResult
@@ -31,7 +31,7 @@ def run_backend_with_staging(
     backend: PredictionBackend,
     request: BackendRequest,
 ) -> BackendResult:
-    """выполнить бэкенд, обеспечив доставку входов из S3 и выгрузку артефактов в S3
+    """выполнить бэкенд (синхронно), обеспечив доставку входов из S3 и выгрузку артефактов
 
     `request.artifacts_dir` приходит как S3-префикс (`artifacts/<task_id>`);
     `document.storage_path` приходит как S3-ключ входного файла.
@@ -42,6 +42,47 @@ def run_backend_with_staging(
     with _staging_workspace() as workspace:
         local_request = _materialize_inputs(request, storage, workspace)
         local_result = backend.process(local_request)
+        return _persist_artifacts(
+            local_result,
+            storage,
+            local_artifacts_dir=workspace.artifacts_dir,
+            s3_artifacts_prefix=s3_artifacts_prefix,
+        )
+
+
+def submit_with_staging(
+    backend: PredictionBackend,
+    request: BackendRequest,
+) -> dict[str, Any]:
+    """фаза 1 remote-бэкенда: скачать входы из S3, отправить в backend.submit, вернуть handle
+
+    Входные файлы материализуются во временный каталог только на время submit
+    (бэкенд их отправляет наружу); артефакты на этой фазе ещё не создаются.
+    """
+    storage = get_object_storage()
+    with _staging_workspace() as workspace:
+        local_request = _materialize_inputs(request, storage, workspace)
+        return backend.submit(local_request)
+
+
+def fetch_with_staging(
+    backend: PredictionBackend,
+    request: BackendRequest,
+    handle: dict[str, Any],
+) -> BackendResult | None:
+    """фаза 2 remote-бэкенда: опросить результат и (если готов) выгрузить артефакты в S3
+
+    Входные файлы не нужны: удалённый сервис уже обработал документ, результат
+    приходит в ответе. Возвращает None, если задача ещё считается.
+    """
+    storage = get_object_storage()
+    s3_artifacts_prefix = request.artifacts_dir
+
+    with _staging_workspace() as workspace:
+        local_request = replace(request, artifacts_dir=str(workspace.artifacts_dir))
+        local_result = backend.fetch(local_request, handle)
+        if local_result is None:
+            return None
         return _persist_artifacts(
             local_result,
             storage,

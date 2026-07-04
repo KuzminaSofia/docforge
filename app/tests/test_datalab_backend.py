@@ -163,7 +163,7 @@ def test_datalab_invalid_mode_raises() -> None:
 def test_datalab_invalid_int_option_raises() -> None:
     backend = DatalabBackend(config={"poll_timeout_s": "not-a-number"})
     with pytest.raises(InvalidBackendConfigurationError):
-        backend._build_client("api-key")
+        backend._poll_params()
 
 
 # ── full convert path (submit + poll, mocked requests) ───────────────────────
