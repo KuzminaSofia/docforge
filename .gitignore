@@ -26,3 +26,12 @@ app/.env
 .env
 .env.local
 .env.*.local
+
+# research/ оффлайн-бенчмарк: сырые данные, IR, QA, эмбеддинги — не в git
+research/data/corpus/
+research/data/ir/
+research/data/qa/
+research/data/embeddings/
+research/data/raw/
+!research/data/.gitkeep
+research/.env
